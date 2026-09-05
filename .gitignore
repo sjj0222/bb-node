@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.log
+data/
+config/*.local.json
+config/local/
+*.db
+*.sqlite
+*.sqlite3
+config/node.json
