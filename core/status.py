@@ -61,6 +61,8 @@ def get_status():
 
 
 def print_status():
+ import time
+
  c=sqlite3.connect(DB)
 
  r=c.execute(
@@ -69,7 +71,6 @@ def print_status():
 
  latest,total=r
  if latest:
-  import time
   age=round(time.time()-latest/1000,1)
   state="OK" if age<=300 else "STALE"
   print(
@@ -83,12 +84,19 @@ def print_status():
 
  c.close()
 
+ now=int(time.time()*1000)
+
  for r in get_status():
+  age=None
+  if r["start_time"]:
+   age=round((now-r["start_time"])/1000,1)
+
   print(
    r["stage"],
    r["status"],
    "in="+str(r["input_count"]),
    "out="+str(r["output_count"]),
+   "age="+str(age)+"s",
    "ms="+str(r["duration_ms"])
   )
 
