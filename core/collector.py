@@ -11,6 +11,7 @@ from mapping.unified_service import unify
 from mapping.db import init_mapping
 from mapping.market_db import init_market_mapping
 from mapping.unified_db import init_unified
+from core.log import start,finish,error
 
 URL="https://api.infv1.com/v1/match/getList"
 
@@ -285,6 +286,8 @@ def run_type(typ,name):
     c.commit()
     c.close()
 
+    log_id=start("COLLECT",name)
+
     try:
         matches=fetch(typ,name)
 
@@ -304,6 +307,13 @@ def run_type(typ,name):
             received_at
         )
 
+        finish(
+            log_id,"OK",
+            mc,rc,
+            "normalized=%s unified=%s" %
+            (nl["normalized"],nl["unified"])
+        )
+
         return {
             "run_id":run_id,
             "source":name,
@@ -315,6 +325,8 @@ def run_type(typ,name):
         }
 
     except Exception as e:
+        error("COLLECT",e)
+        finish(log_id,"ERROR",0,0,str(e)[:200])
         c=connect()
         c.execute("""
         UPDATE collection_runs
