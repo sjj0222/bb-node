@@ -1,8 +1,10 @@
 import sqlite3,json,time
+from core.log import start,finish,error
 
 DB="data/bb.db"
 
 def run():
+ log_id=start("FEATURE","events_v3")
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
  c.execute("delete from features_v2")
 
@@ -57,6 +59,7 @@ def run():
     json.dumps(data,ensure_ascii=False),int(time.time()*1000)))
 
  c.commit()
+ finish(log_id,"OK",len(rows),len(gs),"FEATURE_V2重建完成")
  print("FEATURE_V2重建完成")
  for r in c.execute("""select market_type,count(*) from features_v2
  group by market_type"""):
