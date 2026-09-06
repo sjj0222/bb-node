@@ -1,8 +1,12 @@
 import sqlite3,json,time,hashlib
+from core.log import start,finish,error
 
 DB="data/bb.db"
 
 def run():
+
+ log_id=start("DECISION","strategies_v1")
+
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
  c.execute("""create table if not exists decisions_v1(
  id integer primary key,
@@ -42,8 +46,10 @@ def run():
    h,int(time.time()*1000)))
   n+=x.rowcount
 
+
  c.commit()
- print("新增DECISION",n)
+ finish(log_id,"OK",len(rows),n,"DECISION_V1生成完成")
+ print("新增DECISION")
  for r in c.execute("""select status,count(*)
  from decisions_v1 group by status"""):
   print(*r)
