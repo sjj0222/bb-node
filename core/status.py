@@ -88,8 +88,11 @@ def print_status():
 
  for r in get_status():
   age=None
+  health="NO_DATA"
+
   if r["start_time"]:
    age=round((now-r["start_time"])/1000,1)
+   health="OK" if age<=300 else "STALE"
 
   print(
    r["stage"],
@@ -97,6 +100,7 @@ def print_status():
    "in="+str(r["input_count"]),
    "out="+str(r["output_count"]),
    "age="+str(age)+"s",
+   health,
    "ms="+str(r["duration_ms"])
   )
 
