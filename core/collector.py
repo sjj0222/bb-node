@@ -4,6 +4,13 @@ ROOT=os.path.expanduser("~/bb_node")
 sys.path.insert(0,ROOT)
 
 from database.db import connect,init,data_hash
+from sources.bb import BBAdapter
+from mapping.match import make_canonical_id
+from mapping.service import auto_map
+from mapping.unified_service import unify
+from mapping.db import init_mapping
+from mapping.market_db import init_market_mapping
+from mapping.unified_db import init_unified
 
 URL="https://api.infv1.com/v1/match/getList"
 
@@ -14,8 +21,8 @@ TARGET={
 
 VERSION="0.1.0"
 PROTOCOL="1"
-
 NODE_FILE=os.path.join(ROOT,"config","node.json")
+RAW_DIR=os.path.join(ROOT,"data","raw","bb")
 
 def get_node_id():
     os.makedirs(os.path.dirname(NODE_FILE),exist_ok=True)
@@ -40,8 +47,8 @@ def get_node_id():
     return nid
 
 NODE_ID=get_node_id()
-
 S=requests.Session()
+ADAPTER=BBAdapter()
 
 def get_page(page,typ):
     for n in range(3):
@@ -116,7 +123,7 @@ def fetch(typ,name):
 
     return matches
 
-def parse(matches,source):
+def parse(matches,source="bb"):
     rows=[]
 
     for m in matches.values():
@@ -158,7 +165,6 @@ def parse(matches,source):
 def save(rows,source,run_id,started):
     now=int(time.time())
     c=connect()
-
     matches=set()
 
     for r in rows:
@@ -228,6 +234,43 @@ def save(rows,source,run_id,started):
 
     return len(matches),len(rows)
 
+def save_new_layers(raw_matches,received_at):
+    os.makedirs(RAW_DIR,exist_ok=True)
+
+    total_norm=0
+    total_unified=0
+    match_count=0
+
+    for m in raw_matches.values():
+        raw_ref=ADAPTER.save_raw(m,RAW_DIR)
+
+        records=ADAPTER.normalize(
+            m,
+            received_at,
+            raw_ref=raw_ref
+        )
+
+        if not records:
+            continue
+
+        x=records[0]
+
+        mm=auto_map(x,x)
+        cid=mm["canonical_match_id"]
+
+        match_count+=1
+        total_norm+=len(records)
+
+        for r in records:
+            unify(r,cid)
+            total_unified+=1
+
+    return {
+        "matches":match_count,
+        "normalized":total_norm,
+        "unified":total_unified
+    }
+
 def run_type(typ,name):
     started=int(time.time())
 
@@ -244,15 +287,30 @@ def run_type(typ,name):
 
     try:
         matches=fetch(typ,name)
-        rows=parse(matches,name)
 
-        mc,rc=save(rows,name,run_id,started)
+        received_at=int(time.time()*1000)
+
+        rows=parse(matches,"bb")
+
+        mc,rc=save(
+            rows,
+            name,
+            run_id,
+            started
+        )
+
+        nl=save_new_layers(
+            matches,
+            received_at
+        )
 
         return {
             "run_id":run_id,
             "source":name,
             "matches":mc,
             "rows":rc,
+            "normalized":nl["normalized"],
+            "unified":nl["unified"],
             "success":True
         }
 
@@ -262,22 +320,37 @@ def run_type(typ,name):
         UPDATE collection_runs
         SET finished_at=?,success=0,error=?
         WHERE id=?
-        """,(int(time.time()),str(e)[:500],run_id))
+        """,(
+            int(time.time()),
+            str(e)[:500],
+            run_id
+        ))
         c.commit()
         c.close()
         raise
 
 def collect():
     init()
+    init_mapping()
+    init_market_mapping()
+    init_unified()
 
     print("=== BB Collector Core ===")
     print("Node:",NODE_ID)
 
     a=run_type(3,"今日")
-    print("今日完成：比赛",a["matches"],"盘口",a["rows"])
+    print(
+        "今日完成：比赛",a["matches"],
+        "盘口",a["rows"],
+        "Unified",a["unified"]
+    )
 
     b=run_type(4,"早盘")
-    print("早盘完成：比赛",b["matches"],"盘口",b["rows"])
+    print(
+        "早盘完成：比赛",b["matches"],
+        "盘口",b["rows"],
+        "Unified",b["unified"]
+    )
 
     print("=== 本轮完成 ===")
 
