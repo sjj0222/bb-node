@@ -1,5 +1,6 @@
 import sqlite3,time,hashlib
 from events.line import compare_line
+from core.log import start,finish,error
 
 DB="data/bb.db"
 
@@ -8,6 +9,7 @@ def h(*x):
  return hashlib.sha256(s.encode()).hexdigest()
 
 def main():
+ log_id=start("EVENT","unified")
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
  c.execute("""create table if not exists events_v3(
  id integer primary key,canonical_match_id text,source text,
@@ -21,6 +23,7 @@ def main():
  order by received_at,id""").fetchall()
  ts=sorted(set(r["received_at"] for r in rows))
  if len(ts)<2:
+  finish(log_id,"OK",len(rows),0,"需要至少2个时间点")
   print("需要至少2个时间点");return
  oldt,newt=ts[-2:]
  A=[r for r in rows if r["received_at"]==oldt]
@@ -60,6 +63,7 @@ def main():
     typ,oldt,newt,eh,int(time.time()*1000)))
    n+=x.rowcount
  c.commit()
+ finish(log_id,"OK",len(rows),n,"T1=%s T2=%s" % (oldt,newt))
  print("T1",oldt,"T2",newt)
  print("新增事件",n)
  for x in c.execute("select event_type,count(*) n from events_v3 group by event_type"):
