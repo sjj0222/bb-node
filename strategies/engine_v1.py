@@ -1,8 +1,11 @@
 import sqlite3,json,time,hashlib
+from core.log import start,finish,error
 
 DB="data/bb.db"
 
 def run():
+
+ log_id=start("STRATEGY","signals_v1")
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
  c.execute("""create table if not exists strategies_v1(
  id integer primary key,
@@ -47,7 +50,10 @@ def run():
    n+=x.rowcount
 
  c.commit()
+ 
+ finish(log_id,"OK",len(rows),n,"STRATEGY_V1生成完成")
  print("新增STRATEGY",n)
+
  for r in c.execute("""select strategy_name,status,count(*)
  from strategies_v1 group by strategy_name,status"""):
   print(*r)
