@@ -1,10 +1,7 @@
-import sqlite3,time,hashlib
-from events.line import compare_line
+import sqlite3,time
+from events.engine_v3 import window_events
 
 DB="data/bb.db"
-
-def h(*x):
- return hashlib.sha256("|".join("" if v is None else str(v) for v in x).encode()).hexdigest()
 
 def main():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
@@ -26,52 +23,22 @@ def main():
   A=c.execute("select * from unified_snapshots where received_at=? and canonical_match_id is not null",(oldt,)).fetchall()
   B=c.execute("select * from unified_snapshots where received_at=? and canonical_match_id is not null",(newt,)).fetchall()
 
-  old={}
-  for r in A:
-   k=(r["source"],r["canonical_match_id"],r["market_type"],
-      r["period"],r["side"],r["option"])
-   old.setdefault(k,[]).append(r)
-
   n=0
 
-  for r in B:
-   k=(r["source"],r["canonical_match_id"],r["market_type"],
-      r["period"],r["side"],r["option"])
-   cand=old.get(k,[])
-   if not cand: continue
+  for e in window_events(oldt,newt,A,B):
+   x=c.execute("""insert or ignore into replay_events_v2(
+   old_time,new_time,canonical_match_id,source,market_type,period,
+   side,option,old_line_raw,new_line_raw,old_odds,new_odds,
+   odds_direction,line_direction,line_change_type,event_type,
+   event_hash,created_at)
+   values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+   (e["old_time"],e["new_time"],e["canonical_match_id"],e["source"],
+    e["market_type"],e["period"],e["side"],e["option"],
+    e["old_line_raw"],e["new_line_raw"],e["old_odds"],e["new_odds"],
+    e["odds_direction"],e["line_direction"],e["line_change_type"],
+    e["event_type"],e["event_hash"],int(time.time()*1000)))
 
-   a=min(cand,key=lambda x:abs((x["line"] or 0)-(r["line"] or 0)))
-   od=a["odds"]!=r["odds"]
-   lc=str(a["line_raw"])!=str(r["line_raw"])
-   info=compare_line(a["line_raw"],r["line_raw"]) if lc else None
-   events=[]
-
-   if od: events.append(("WATER_CHANGE",None))
-   if info and info["changed"]: events.append(("LINE_CHANGE",info))
-
-   for typ,li in events:
-    d=None
-    if od:
-     d="UP" if r["odds"]>a["odds"] else "DOWN"
-
-    eh=h(r["canonical_match_id"],r["source"],k,
-         a["line_raw"],r["line_raw"],a["odds"],
-         r["odds"],oldt,newt,typ)
-
-    x=c.execute("""insert or ignore into replay_events_v2(
-    old_time,new_time,canonical_match_id,source,market_type,period,
-    side,option,old_line_raw,new_line_raw,old_odds,new_odds,
-    odds_direction,line_direction,line_change_type,event_type,
-    event_hash,created_at)
-    values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-    (oldt,newt,r["canonical_match_id"],r["source"],
-     r["market_type"],r["period"],r["side"],r["option"],
-     a["line_raw"],r["line_raw"],a["odds"],r["odds"],d,
-     li["direction"] if li else None,
-     li["change_type"] if li else None,
-     typ,eh,int(time.time()*1000)))
-
-    n+=x.rowcount
+   n+=x.rowcount
 
   total+=n
   print("WINDOW",oldt,newt,"EVENTS",n)
