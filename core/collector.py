@@ -357,12 +357,6 @@ def collect():
         "Unified",a["unified"]
     )
 
-    b=run_type(4,"早盘")
-    print(
-        "早盘完成：比赛",b["matches"],
-        "盘口",b["rows"],
-        "Unified",b["unified"]
-    )
 
     print("=== 本轮完成 ===")
 
