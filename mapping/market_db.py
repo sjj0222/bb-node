@@ -33,16 +33,17 @@ def init_market_mapping():
     c.commit()
     c.close()
 
-def save_market(m, canonical_match_id=None, source_match_id=None):
+def save_market(m, canonical_match_id=None, source_match_id=None, conn=None):
     now=int(time.time()*1000)
-    c=connect()
+    own = conn is None
+    c = conn or connect()
 
     c.execute("""
     INSERT INTO market_mappings
     (source,canonical_match_id,source_match_id,source_market_id,
-     market_type,period,line_raw,line,side,option,odds,
+     market_type,period,line_raw,line,side,option,odds,status,
      created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(source,source_match_id,source_market_id,option)
     DO UPDATE SET
       canonical_match_id=excluded.canonical_match_id,
@@ -52,6 +53,7 @@ def save_market(m, canonical_match_id=None, source_match_id=None):
       line=excluded.line,
       side=excluded.side,
       odds=excluded.odds,
+      status=excluded.status,
       updated_at=excluded.updated_at
     """,(
         m.source,
@@ -65,12 +67,14 @@ def save_market(m, canonical_match_id=None, source_match_id=None):
         m.side,
         m.option,
         m.odds,
+        m.status,
         now,
         now
     ))
 
-    c.commit()
-    c.close()
+    if own:
+        c.commit()
+        c.close()
 
 def get_markets(canonical_match_id):
     c=connect()

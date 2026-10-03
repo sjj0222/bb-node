@@ -1,0 +1,157 @@
+"""BB Node V0.1 —— 正式 Pipeline Orchestrator(规则 17/18/47)。
+
+统一协调: COLLECT -> NORMALIZE -> MAPPING -> UNIFIED -> EVENT -> FEATURE
+-> SIGNAL -> STRATEGY -> DECISION。
+
+每个 Stage:
+  - 明确输入/输出/错误状态
+  - 记录执行时间与数量(core.log pipeline_runs)
+  - 失败可定位(独立 try/except, 报告各 stage 状态)
+
+生产主流程唯一入口: python -m pipeline.orchestrator
+"""
+import sys
+import time
+
+from core import env
+from database.db import init
+from core.collector import collect as run_collect
+from core.status import print_status
+
+PIPELINE_VERSION = env.pipeline_version()
+
+
+def _run_stage(name, fn, *args, **kwargs):
+    t0 = time.time()
+    try:
+        out = fn(*args, **kwargs)
+        return {
+            "stage": name,
+            "status": "OK",
+            "output": out,
+            "elapsed_s": round(time.time() - t0, 3),
+        }
+    except Exception as e:
+        return {
+            "stage": name,
+            "status": "ERROR",
+            "error": str(e)[:500],
+            "elapsed_s": round(time.time() - t0, 3),
+        }
+
+
+def run_pipeline(sources=None, cutoff=None, stages=None, quiet=False):
+    """执行完整生产 Pipeline。
+
+    stages: 要运行的阶段列表, 默认全部(COLLECT..DECISION)。
+    cutoff: 毫秒时间戳, 只处理 <= cutoff 的数据(时间旅行)。
+    """
+    init()
+
+    all_stages = ["COLLECT", "EVENT", "FEATURE",
+                  "SIGNAL", "STRATEGY", "DECISION"]
+    if stages:
+        want = [s.upper() for s in stages]
+        invalid = [s for s in want if s not in all_stages]
+        if invalid:
+            raise ValueError("unknown stage(s): %s" % ",".join(invalid))
+    else:
+        want = all_stages
+
+    results = {}
+
+    if "COLLECT" in want:
+        print("=== Stage COLLECT ===")
+        results["COLLECT"] = _run_stage("COLLECT", run_collect, sources)
+
+    if "EVENT" in want:
+        print("=== Stage EVENT ===")
+        from events.engine_v3 import run as event_run
+        from events.group_v3 import run as group_run
+        r1 = _run_stage("EVENT", event_run, cutoff)
+        r2 = _run_stage("EVENT_GROUP", group_run, cutoff)
+        results["EVENT"] = r1
+        results["EVENT_GROUP"] = r2
+
+    if "FEATURE" in want:
+        print("=== Stage FEATURE ===")
+        from features.engine_v2 import run as feature_run
+        results["FEATURE"] = _run_stage("FEATURE", feature_run, cutoff)
+
+    if "SIGNAL" in want:
+        print("=== Stage SIGNAL ===")
+        from signals.engine_v1 import run as signal_run
+        results["SIGNAL"] = _run_stage("SIGNAL", signal_run, cutoff)
+
+    if "STRATEGY" in want:
+        print("=== Stage STRATEGY ===")
+        from strategies.engine_v1 import run as strategy_run
+        results["STRATEGY"] = _run_stage("STRATEGY", strategy_run, cutoff)
+
+    if "DECISION" in want:
+        print("=== Stage DECISION ===")
+        from decisions.engine_v1 import run as decision_run
+        results["DECISION"] = _run_stage("DECISION", decision_run, cutoff)
+
+    if not quiet:
+        _print_summary(results)
+
+    return results
+
+
+def _print_summary(results):
+    print("\n=== PIPELINE SUMMARY ===")
+    print("pipeline_version:", PIPELINE_VERSION)
+    print("schema_version:", env.schema_version())
+    print("engines:", env.get("engines"))
+    for name, r in results.items():
+        if r["status"] == "OK":
+            print("[OK]   %s  %ss" % (name, r["elapsed_s"]))
+        else:
+            print("[FAIL] %s  %s" % (name, r.get("error", "")))
+    return all(r["status"] == "OK" for r in results.values())
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(description="BB Node V0.1 Pipeline")
+    ap.add_argument("--stage", nargs="+", default=None,
+                    help="只运行指定阶段, 如 --stage COLLECT EVENT")
+    ap.add_argument("--source", nargs="+", default=None,
+                    help="只采集指定 Source, 如 --source bb sx")
+    ap.add_argument("--cutoff", type=int, default=None,
+                    help="时间旅行截止(毫秒时间戳), 只处理该时刻之前的数据")
+    ap.add_argument("--replay", action="store_true",
+                    help="运行 True Replay(从历史数据重跑完整 Pipeline)")
+    ap.add_argument("--replay-cutoff", type=int, default=None,
+                    help="Replay 时间截止(毫秒)")
+    ap.add_argument("--backtest", action="store_true",
+                    help="运行 Backtest(基于 Replay)")
+    ap.add_argument("--status", action="store_true",
+                    help="打印 Pipeline 健康状态")
+    args = ap.parse_args()
+
+    if args.status:
+        print_status()
+        return
+
+    if args.replay:
+        from replay.true_replay import run as replay_run
+        replay_run(cutoff=args.replay_cutoff)
+        if args.backtest:
+            from backtest.engine_v1 import run as bt_run
+            bt_run()
+        return
+
+    results = run_pipeline(
+        sources=args.source,
+        cutoff=args.cutoff,
+        stages=args.stage,
+    )
+    ok = all(r["status"] == "OK" for r in results.values())
+    print("\nPIPELINE: %s" % ("PASS" if ok else "FAIL"))
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

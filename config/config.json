@@ -1,0 +1,44 @@
+{
+  "pipeline": {
+    "version": "0.1.0"
+  },
+  "database": {
+    "path": "data/bb.db",
+    "schema_version": 2
+  },
+  "stale_after_seconds": 300,
+  "engines": {
+    "event": "v3",
+    "feature": "v2",
+    "signal": "v1",
+    "strategy": "v1",
+    "decision": "v1",
+    "replay": "v2",
+    "backtest": "v1"
+  },
+  "sources": {
+    "bb": {
+      "enabled": true,
+      "url": "https://api.infv1.com/v1/match/getList",
+      "app_version": "5.4.0",
+      "os_type": "1",
+      "app_type": "0",
+      "language_type": "CMN",
+      "leagues": {},
+      "run_types": [
+        {"type": 3, "name": "今日"}
+      ]
+    },
+    "sx": {
+      "enabled": true,
+      "base_url": "https://api.sx.bet",
+      "sport_id": 5,
+      "market_types": {
+        "1": "binary",
+        "2": "total",
+        "3": "asian_handicap",
+        "52": "1x2"
+      }
+    }
+  }
+}

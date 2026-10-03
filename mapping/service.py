@@ -1,7 +1,7 @@
 from .match import map_match
 from .db import save_mapping
 
-def auto_map(a, b):
+def auto_map(a, b, conn=None):
     r = map_match(a, b)
 
     data = {
@@ -15,5 +15,5 @@ def auto_map(a, b):
         "status": r["status"]
     }
 
-    save_mapping(data)
+    save_mapping(data, conn=conn)
     return data

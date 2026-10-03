@@ -49,9 +49,10 @@ def init_unified():
     c.commit()
     c.close()
 
-def save_unified(record, canonical_match_id=None):
+def save_unified(record, canonical_match_id=None, conn=None):
     now=int(time.time()*1000)
-    c=connect()
+    own = conn is None
+    c = conn or connect()
 
     c.execute("""
     INSERT OR IGNORE INTO unified_snapshots
@@ -59,8 +60,8 @@ def save_unified(record, canonical_match_id=None):
      source_match_id,source_market_id,
      market_type,period,line_raw,line,side,
      option,odds,event_time,server_time,
-     received_at,raw_ref,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     received_at,raw_ref,pipeline_version,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """,(
         canonical_match_id,
         record.source,
@@ -78,11 +79,13 @@ def save_unified(record, canonical_match_id=None):
         record.server_time,
         record.received_at,
         record.raw_ref,
+        getattr(record, "pipeline_version", None),
         now
     ))
 
-    c.commit()
-    c.close()
+    if own:
+        c.commit()
+        c.close()
 
 def get_match(canonical_match_id,limit=500):
     c=connect()

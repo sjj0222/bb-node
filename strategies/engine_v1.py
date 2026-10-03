@@ -1,62 +1,90 @@
-import sqlite3,json,time,hashlib
-from core.log import start,finish,error
+"""Strategy Engine V1 —— 生产版(规则 12)。
 
-DB="data/bb.db"
+对多个 Signal 组合: 同一窗口内 WATER_SHIFT_STRONG + MULTI_LEVEL_SYNC
+-> AH_MULTI_LEVEL_WATER (TRIGGERED)。
 
-def run():
+不得修改 RAW(规则 12); 带 lineage: signal_id 引用来源信号。
+"""
+import sqlite3
+import json
+import time
+import hashlib
+from core import env
+from core.log import start, finish, error
 
- log_id=start("STRATEGY","signals_v1")
- c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
- c.execute("""create table if not exists strategies_v1(
- id integer primary key,
- canonical_match_id text,source text,
- market_type text,period text,
- old_time integer,new_time integer,
- strategy_name text,status text,
- direction text,selection text,bet integer,
- signals_json text,strategy_hash text unique,created_at integer)""")
+DB = env.db_path()
+ENGINE_VERSION = "v1"
+PIPELINE_VERSION = env.pipeline_version()
 
- rows=c.execute("""
- select * from signals_v1
- order by canonical_match_id,old_time,id
- """).fetchall()
 
- groups={}
- for r in rows:
-  k=(r["canonical_match_id"],r["source"],
-     r["market_type"],r["period"],r["old_time"],r["new_time"])
-  groups.setdefault(k,[]).append(r)
+def run(cutoff=None, db=None):
+    dbfile = db or DB
+    log_id = start("STRATEGY", "signals_v1")
+    c = sqlite3.connect(dbfile)
+    c.row_factory = sqlite3.Row
 
- n=0
- for k,rs in groups.items():
-  names={r["signal_type"] for r in rs}
+    try:
+        if cutoff:
+            rows = c.execute("""select * from signals_v1
+                where new_time <= ? order by canonical_match_id,old_time,id""",
+                             (cutoff,)).fetchall()
+        else:
+            rows = c.execute("""
+             select * from signals_v1
+             order by canonical_match_id,old_time,id""").fetchall()
 
-  if "WATER_SHIFT_STRONG" in names and \
-     "MULTI_LEVEL_SYNC" in names:
-   mid,src,mt,period,t1,t2=k
-   sj=[r["signal_type"] for r in rs]
-   h=hashlib.sha256(repr((k,"AH_MULTI_LEVEL_WATER")).encode()).hexdigest()
+        groups = {}
+        for r in rows:
+            k = (r["canonical_match_id"], r["source"],
+                 r["market_type"], r["period"], r["old_time"], r["new_time"])
+            groups.setdefault(k, []).append(r)
 
-   x=c.execute("""insert or ignore into strategies_v1(
-   canonical_match_id,source,market_type,period,
-   old_time,new_time,strategy_name,status,
-   direction,selection,bet,signals_json,
-   strategy_hash,created_at)
-   values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-   (mid,src,mt,period,t1,t2,
-    "AH_MULTI_LEVEL_WATER","TRIGGERED",
-    None,None,0,json.dumps(sj),
-    h,int(time.time()*1000)))
-   n+=x.rowcount
+        n = 0
+        for k, rs in groups.items():
+            names = {r["signal_type"] for r in rs}
 
- c.commit()
- 
- finish(log_id,"OK",len(rows),n,"STRATEGY_V1生成完成")
- print("新增STRATEGY",n)
+            if "WATER_SHIFT_STRONG" in names and \
+                    "MULTI_LEVEL_SYNC" in names:
+                mid, src, mt, period, t1, t2 = k
+                sj = [{
+                    "signal_id": r["id"],
+                    "signal_type": r["signal_type"],
+                    "strength": r["strength"],
+                    "feature_id": r["feature_id"],
+                } for r in rs]
+                h = hashlib.sha256(
+                    repr((k, "AH_MULTI_LEVEL_WATER")).encode()).hexdigest()
 
- for r in c.execute("""select strategy_name,status,count(*)
- from strategies_v1 group by strategy_name,status"""):
-  print(*r)
- c.close()
+                x = c.execute("""insert or ignore into strategies_v1(
+                 canonical_match_id,source,market_type,period,
+                 old_time,new_time,strategy_name,status,
+                 direction,selection,bet,signal_id,
+                 pipeline_version,engine_version,signals_json,
+                 strategy_hash,created_at)
+                 values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 (mid, src, mt, period, t1, t2,
+                  "AH_MULTI_LEVEL_WATER", "TRIGGERED",
+                  None, None, 0, rs[0]["id"],
+                  PIPELINE_VERSION, ENGINE_VERSION,
+                  json.dumps(sj, ensure_ascii=False),
+                  h, int(time.time() * 1000)))
+                n += x.rowcount
 
-if __name__=="__main__":run()
+        c.commit()
+        finish(log_id, "OK", len(rows), n, "STRATEGY_V1生成完成")
+        print("新增STRATEGY", n)
+        for r in c.execute("""select strategy_name,status,count(*)
+            from strategies_v1 group by strategy_name,status"""):
+            print(*r)
+        return n
+    except Exception as e:
+        c.rollback()
+        error("STRATEGY", e)
+        finish(log_id, "ERROR", 0, 0, str(e)[:200])
+        raise
+    finally:
+        c.close()
+
+
+if __name__ == "__main__":
+    run()

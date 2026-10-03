@@ -30,9 +30,10 @@ def init_mapping():
     c.commit()
     c.close()
 
-def save_mapping(r):
+def save_mapping(r, conn=None):
     now = int(time.time() * 1000)
-    c = connect()
+    own = conn is None
+    c = conn or connect()
     c.execute("""
     INSERT INTO match_mappings
     (source,source_match_id,canonical_match_id,
@@ -60,8 +61,9 @@ def save_mapping(r):
         now,
         now
     ))
-    c.commit()
-    c.close()
+    if own:
+        c.commit()
+        c.close()
 
 def get_by_source(source, source_match_id):
     c = connect()

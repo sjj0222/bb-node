@@ -1,0 +1,11 @@
+"""Mapping 显式状态枚举(规则 19 / 6.2 / 7.4)。
+
+异常必须显式表达, 禁止用 None / '' / 0 / UNKNOWN 混用不同问题。
+"""
+MAPPED = "MAPPED"
+UNMAPPED = "UNMAPPED"
+CONFLICT = "CONFLICT"
+PENDING = "PENDING"
+INVALID = "INVALID"
+
+ALL = {MAPPED, UNMAPPED, CONFLICT, PENDING, INVALID}
