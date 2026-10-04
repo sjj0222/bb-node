@@ -1,9 +1,7 @@
-"""Strategy Engine V1 —— 生产版(规则 12)。
+"""Strategy Engine V1 —— 插件调度器(V0.2 P0-6, 规则 12/32/33/72)。
 
-对多个 Signal 组合: 同一窗口内 WATER_SHIFT_STRONG + MULTI_LEVEL_SYNC
--> AH_MULTI_LEVEL_WATER (TRIGGERED)。
-
-不得修改 RAW(规则 12); 带 lineage: signal_id 引用来源信号。
+Core 只负责: 分组 signals -> 调度 active Strategy Plugin -> 持久化。
+规则逻辑全部在 Plugin 中, 可替换/增加而不修改 Core(规则 72)。
 """
 import sqlite3
 import json
@@ -17,10 +15,16 @@ ENGINE_VERSION = "v1"
 PIPELINE_VERSION = env.pipeline_version()
 
 
+def _signal_group_key(r):
+    return (r["canonical_match_id"], r["source"],
+            r["market_type"], r["period"], r["old_time"], r["new_time"])
+
+
 def run(cutoff=None, db=None):
     dbfile = db or DB
     log_id = start("STRATEGY", "signals_v1")
-    c = sqlite3.connect(dbfile)
+    _external = hasattr(dbfile, "execute")
+    c = dbfile if _external else sqlite3.connect(dbfile)
     c.row_factory = sqlite3.Row
 
     try:
@@ -33,27 +37,28 @@ def run(cutoff=None, db=None):
              select * from signals_v1
              order by canonical_match_id,old_time,id""").fetchall()
 
+        from strategies.plugin import active_plugins
+        plugins = active_plugins()
+
         groups = {}
         for r in rows:
-            k = (r["canonical_match_id"], r["source"],
-                 r["market_type"], r["period"], r["old_time"], r["new_time"])
-            groups.setdefault(k, []).append(r)
+            groups.setdefault(_signal_group_key(r), []).append(r)
 
         n = 0
         for k, rs in groups.items():
-            names = {r["signal_type"] for r in rs}
+            for plugin in plugins:
+                try:
+                    res = plugin.evaluate(rs)
+                except Exception as e:
+                    error("STRATEGY", e)
+                    res = None
+                if not res:
+                    continue
 
-            if "WATER_SHIFT_STRONG" in names and \
-                    "MULTI_LEVEL_SYNC" in names:
                 mid, src, mt, period, t1, t2 = k
-                sj = [{
-                    "signal_id": r["id"],
-                    "signal_type": r["signal_type"],
-                    "strength": r["strength"],
-                    "feature_id": r["feature_id"],
-                } for r in rs]
+                sj = res["evidence"].get("signals", [])
                 h = hashlib.sha256(
-                    repr((k, "AH_MULTI_LEVEL_WATER")).encode()).hexdigest()
+                    repr((k, res["strategy_name"])).encode()).hexdigest()
 
                 x = c.execute("""insert or ignore into strategies_v1(
                  canonical_match_id,source,market_type,period,
@@ -63,15 +68,17 @@ def run(cutoff=None, db=None):
                  strategy_hash,created_at)
                  values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (mid, src, mt, period, t1, t2,
-                  "AH_MULTI_LEVEL_WATER", "TRIGGERED",
-                  None, None, 0, rs[0]["id"],
+                  res["strategy_name"], res["status"],
+                  res.get("direction"), res.get("selection"),
+                  res.get("bet", 0), rs[0]["id"],
                   PIPELINE_VERSION, ENGINE_VERSION,
                   json.dumps(sj, ensure_ascii=False),
                   h, int(time.time() * 1000)))
                 n += x.rowcount
+                break  # 一个组一个策略即可
 
         c.commit()
-        finish(log_id, "OK", len(rows), n, "STRATEGY_V1生成完成")
+        finish(log_id, "OK", len(rows), n, "STRATEGY_V1(plugins)完成")
         print("新增STRATEGY", n)
         for r in c.execute("""select strategy_name,status,count(*)
             from strategies_v1 group by strategy_name,status"""):
@@ -83,7 +90,8 @@ def run(cutoff=None, db=None):
         finish(log_id, "ERROR", 0, 0, str(e)[:200])
         raise
     finally:
-        c.close()
+        if not _external:
+            c.close()
 
 
 if __name__ == "__main__":

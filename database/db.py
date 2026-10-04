@@ -61,8 +61,206 @@ def _migrate_v2(c):
     _add_column(c, "unified_snapshots", "pipeline_version", "TEXT")
 
 
+V3_TABLES = """
+CREATE TABLE IF NOT EXISTS source_health(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    last_success INTEGER,
+    last_attempt INTEGER,
+    latency_ms REAL,
+    records INTEGER DEFAULT 0,
+    error_count INTEGER DEFAULT 0,
+    last_error TEXT,
+    http_success INTEGER DEFAULT 0,
+    data_success INTEGER DEFAULT 0,
+    pipeline_success INTEGER DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(source)
+);
+
+CREATE TABLE IF NOT EXISTS app_logs(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    level TEXT NOT NULL,
+    module TEXT NOT NULL,
+    entity TEXT,
+    message TEXT,
+    trace_id TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_applogs_time ON app_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_applogs_module ON app_logs(module,ts);
+
+CREATE TABLE IF NOT EXISTS dq_runs(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT,
+    pipeline_run_id TEXT,
+    window_start INTEGER,
+    window_end INTEGER,
+    total INTEGER,
+    valid INTEGER,
+    invalid INTEGER,
+    missing INTEGER,
+    duplicate INTEGER,
+    conflict INTEGER,
+    unmapped INTEGER,
+    stale INTEGER,
+    out_of_order INTEGER,
+    score REAL,
+    detail TEXT,
+    pipeline_version TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS monitor_runs(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    monitor_run_id TEXT,
+    started_at INTEGER,
+    ended_at INTEGER,
+    status TEXT,
+    interval_seconds INTEGER,
+    selected_only INTEGER DEFAULT 0,
+    rounds INTEGER DEFAULT 0,
+    alerts INTEGER DEFAULT 0,
+    errors INTEGER DEFAULT 0,
+    last_round_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS watchlist(
+    canonical_match_id TEXT PRIMARY KEY,
+    note TEXT,
+    added_at INTEGER NOT NULL,
+    last_seen INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS alerts(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    entity TEXT,
+    source TEXT,
+    message TEXT,
+    payload TEXT,
+    monitor_run_id TEXT,
+    pipeline_run_id TEXT,
+    created_at INTEGER NOT NULL,
+    status TEXT DEFAULT 'OPEN'
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(alert_type,created_at);
+CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+
+CREATE TABLE IF NOT EXISTS nodes_v2(
+    node_id TEXT PRIMARY KEY,
+    protocol_version TEXT NOT NULL,
+    software_version TEXT,
+    capabilities TEXT,
+    last_seen INTEGER NOT NULL,
+    status TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_runs(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sync_run_id TEXT,
+    peer_node_id TEXT,
+    direction TEXT,
+    object_type TEXT,
+    from_cursor INTEGER,
+    to_cursor INTEGER,
+    batch_size INTEGER,
+    status TEXT,
+    conflict INTEGER DEFAULT 0,
+    rejected INTEGER DEFAULT 0,
+    written INTEGER DEFAULT 0,
+    started_at INTEGER,
+    ended_at INTEGER,
+    protocol_version TEXT
+);
+
+CREATE TABLE IF NOT EXISTS strategy_plugins(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin_id TEXT NOT NULL,
+    version TEXT,
+    name TEXT,
+    active INTEGER DEFAULT 1,
+    registered_at INTEGER NOT NULL,
+    UNIQUE(plugin_id)
+);
+
+CREATE TABLE IF NOT EXISTS decision_plugins(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin_id TEXT NOT NULL,
+    version TEXT,
+    name TEXT,
+    active INTEGER DEFAULT 1,
+    registered_at INTEGER NOT NULL,
+    UNIQUE(plugin_id)
+);
+
+CREATE TABLE IF NOT EXISTS backtest_runs_v2(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    replay_id INTEGER,
+    strategy_plugin TEXT,
+    group_by TEXT,
+    sample_count INTEGER,
+    trigger_count INTEGER,
+    success_count INTEGER,
+    failure_count INTEGER,
+    success_rate REAL,
+    result_distribution TEXT,
+    params TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS replay_runs_v2(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    replay_hash TEXT UNIQUE,
+    filter_json TEXT,
+    snapshots INTEGER,
+    matches INTEGER,
+    start_time INTEGER,
+    end_time INTEGER,
+    data_version TEXT,
+    engine_version TEXT,
+    schema_version INTEGER,
+    config_version TEXT,
+    strategy_version TEXT,
+    events INTEGER,
+    features INTEGER,
+    signals INTEGER,
+    strategies INTEGER,
+    decisions INTEGER,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS stability_runs(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT,
+    started_at INTEGER,
+    ended_at INTEGER,
+    rounds INTEGER,
+    errors INTEGER,
+    recoveries INTEGER,
+    mem_mb_peak REAL,
+    db_bytes_peak INTEGER,
+    wal_bytes_peak INTEGER,
+    dup_rate REAL,
+    status TEXT
+);
+"""
+
+
+def _migrate_v3(c):
+    """V3: V0.2 表(Source Health / Logs / DQ / Monitor / P2P / Plugin / BacktestV2)。幂等。"""
+    c.executescript(V3_TABLES)
+
+
 MIGRATIONS = {
     2: _migrate_v2,
+    3: _migrate_v3,
 }
 
 

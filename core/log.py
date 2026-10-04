@@ -1,5 +1,7 @@
 import os
 import time
+import json
+import uuid
 import logging
 import sqlite3
 from core import env
@@ -20,6 +22,18 @@ _SCHEMA_VERSION = env.schema_version()
 _ENGINE_VERSIONS = env.get("engines", {})
 _CONFIG_VERSION = os.environ.get("BB_NODE_CONFIG_VERSION", "default")
 
+# V0.2: 日志分层模块(规则 51)
+LOG_MODULES = (
+    "SOURCE", "COLLECT", "MAPPING", "UNIFIED", "QUALITY",
+    "EVENT", "FEATURE", "SIGNAL", "STRATEGY", "DECISION",
+    "MONITOR", "P2P", "REPLAY", "BACKTEST",
+)
+
+
+def new_trace_id(prefix="pipeline"):
+    """V0.2: trace id(规则 52)。pipeline_run_id / monitor_run_id / replay_run_id / sync_run_id。"""
+    return "%s-%s" % (prefix, uuid.uuid4().hex[:12])
+
 
 def init():
     c = sqlite3.connect(DB)
@@ -39,8 +53,35 @@ def init():
         engine_versions text,
         config_version text
     )""")
+    c.execute("""create table if not exists app_logs(
+        id integer primary key autoincrement,
+        ts integer not null,
+        level text not null,
+        module text not null,
+        entity text,
+        message text,
+        trace_id text,
+        created_at integer not null
+    )""")
     c.commit()
     c.close()
+
+
+def log_event(level, module, entity, message, trace_id=None):
+    """V0.2: 结构化分层日志(规则 51/52)。"""
+    assert module in LOG_MODULES, "unknown log module: %s" % module
+    t = int(time.time() * 1000)
+    try:
+        c = sqlite3.connect(DB)
+        c.execute("""insert into app_logs(ts,level,module,entity,message,trace_id,created_at)
+            values(?,?,?,?,?,?,?)""",
+            (t, level, module, entity or "", message, trace_id or "", t))
+        c.commit()
+        c.close()
+    except Exception:
+        pass
+    logging.info("%s | %s | %s | %s | %s",
+                 module, level, entity or "", message, trace_id or "")
 
 
 def start(stage, source=""):

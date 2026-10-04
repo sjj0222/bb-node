@@ -9,6 +9,7 @@ Normalized -> Match Mapping -> Market Mapping -> Unified
 import json
 import pytest
 
+from core import env
 from events.engine_v3 import run as event_run
 from events.group_v3 import run as group_run
 from features.engine_v2 import run as feature_run
@@ -36,7 +37,7 @@ def test_pipeline_full(db):
     row = db.execute(
         "select unified_snapshot_id,pipeline_version,engine_version from events_v3 limit 1").fetchone()
     assert row["unified_snapshot_id"] is not None
-    assert row["pipeline_version"] == "0.1.0"
+    assert row["pipeline_version"] == env.pipeline_version()
     assert row["engine_version"] == "v3"
 
     gr = group_run()
@@ -49,7 +50,7 @@ def test_pipeline_full(db):
     assert ft >= 1
     frow = db.execute(
         "select event_refs,pipeline_version,engine_version from features_v2 limit 1").fetchone()
-    assert frow["event_refs"] and frow["pipeline_version"] == "0.1.0"
+    assert frow["event_refs"] and frow["pipeline_version"] == env.pipeline_version()
     assert frow["engine_version"] == "v2"
 
     # SIGNAL: Feature 满足条件才触发(数据不足时为 0, 属正确行为)
@@ -59,7 +60,7 @@ def test_pipeline_full(db):
         "select feature_id,pipeline_version from signals_v1 limit 1").fetchone()
     if srow:
         assert srow["feature_id"] is not None
-        assert srow["pipeline_version"] == "0.1.0"
+        assert srow["pipeline_version"] == env.pipeline_version()
 
     # STRATEGY: 组合 Signal
     st = strategy_run()
@@ -68,7 +69,7 @@ def test_pipeline_full(db):
         "select signal_id,pipeline_version from strategies_v1 limit 1").fetchone()
     if strow:
         assert strow["signal_id"] is not None
-        assert strow["pipeline_version"] == "0.1.0"
+        assert strow["pipeline_version"] == env.pipeline_version()
 
     # DECISION: 结构化候选, direction/selection 允许 UNKNOWN(规则 13)
     dc = decision_run()
@@ -78,7 +79,7 @@ def test_pipeline_full(db):
     if drow:
         assert drow["strategy_id"] is not None
         assert drow["status"] in ("CANDIDATE",)
-        assert drow["pipeline_version"] == "0.1.0"
+        assert drow["pipeline_version"] == env.pipeline_version()
         assert drow["engine_version"] == "v1"
 
 

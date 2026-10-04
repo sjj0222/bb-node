@@ -1,10 +1,11 @@
 {
+  "config_version": "v0.2",
   "pipeline": {
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "database": {
     "path": "data/bb.db",
-    "schema_version": 2
+    "schema_version": 3
   },
   "stale_after_seconds": 300,
   "engines": {
@@ -14,7 +15,10 @@
     "strategy": "v1",
     "decision": "v1",
     "replay": "v2",
-    "backtest": "v1"
+    "backtest": "v2",
+    "quality": "v1",
+    "monitor": "v1",
+    "p2p": "v1"
   },
   "sources": {
     "bb": {
@@ -27,7 +31,8 @@
       "leagues": {},
       "run_types": [
         {"type": 3, "name": "今日"}
-      ]
+      ],
+      "timeout": 15
     },
     "sx": {
       "enabled": true,
@@ -38,7 +43,67 @@
         "2": "total",
         "3": "asian_handicap",
         "52": "1x2"
-      }
+      },
+      "timeout": 20
     }
+  },
+  "monitor": {
+    "enabled": true,
+    "interval_seconds": 300,
+    "run_incremental": true,
+    "watchlist_only": false,
+    "alerts": {
+      "source_down": true,
+      "source_stale": true,
+      "mapping_conflict": true,
+      "mapping_unmapped": true,
+      "dq_error": true,
+      "pipeline_error": true
+    }
+  },
+  "quality": {
+    "max_stale_seconds": 900,
+    "max_gap_seconds": 600,
+    "score_weights": {
+      "validity": 0.3,
+      "completeness": 0.2,
+      "uniqueness": 0.2,
+      "consistency": 0.2,
+      "freshness": 0.1
+    }
+  },
+  "market": {
+    "handlers": {
+      "asian_handicap": "ah",
+      "over_under": "total",
+      "total": "total",
+      "1x2": "1x2",
+      "double_chance": "double_chance",
+      "corner_over_under": "corner_total",
+      "binary": "binary"
+    },
+    "unsupported_status": "UNSUPPORTED"
+  },
+  "p2p": {
+    "protocol_version": "1.0",
+    "node_id": "auto",
+    "port": 0,
+    "sync_objects": ["raw", "unified"],
+    "batch_size": 500,
+    "max_batches": 100
+  },
+  "strategy": {
+    "plugins_dir": "strategies/plugins",
+    "active_plugins": ["ah_multi_level_water"]
+  },
+  "decision": {
+    "plugins_dir": "decisions/plugins",
+    "active_plugins": ["candidate"]
+  },
+  "replay": {
+    "engine": "v2"
+  },
+  "backtest": {
+    "engine": "v2"
   }
 }

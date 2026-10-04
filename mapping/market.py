@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from .status import MAPPED, UNMAPPED, INVALID
+from .status import MAPPED, UNMAPPED, INVALID, UNSUPPORTED
 from .match import norm_name
+from market.registry import get_handler
 
 
 @dataclass
@@ -118,8 +119,13 @@ def normalize(record):
         status = UNMAPPED
     elif record.odds is None or record.odds <= 0:
         status = INVALID
-    elif mtype in LINE_REQUIRED and line is None:
-        status = INVALID
+    else:
+        handler = get_handler(mtype)
+        if not handler.supported:
+            # V0.2 规则 18: 未支持 Market 不得静默丢弃 -> UNSUPPORTED
+            status = UNSUPPORTED
+        elif handler.requires_line and line is None:
+            status = INVALID
 
     return MarketMapping(
         source=record.source,
