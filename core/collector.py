@@ -99,9 +99,11 @@ def _process_records(recs, counts, conn):
 
 def collect_source(name, received_at=None):
     """采集单个 Source; 独立失败, 不拖垮其他 Source(规则 3.3)。"""
+    from core import health
     adapter = get_adapter(name)
     run_id = _new_run(name)
     log_id = start("COLLECT", name)
+    t0 = __import__("time").time()
     counts = {"mapped": 0, "unmapped": 0, "invalid": 0,
               "pending": 0, "unified": 0}
     match_count = 0
@@ -145,6 +147,11 @@ def collect_source(name, received_at=None):
                "mapped=%s unmapped=%s invalid=%s unified=%s" % (
                    counts["mapped"], counts["unmapped"],
                    counts["invalid"], counts["unified"]))
+        # V0.2 Source Health(规则 13/14): 成功
+        health.record(name, status=health.UP,
+                      latency_ms=(time.time() - t0) * 1000,
+                      records=counts["unified"],
+                      http_ok=True, data_ok=True, pipeline_ok=True)
 
         return {
             "run_id": run_id,
@@ -162,6 +169,21 @@ def collect_source(name, received_at=None):
         _finish_run(run_id, match_count, 0, False, str(e))
         error("COLLECT", e)
         finish(log_id, "ERROR", match_count, 0, str(e)[:200])
+        # V0.2 Source Health(规则 14): HTTP/数据/管道失败区分
+        status = health.INVALID_RESPONSE
+        msg = str(e)[:300]
+        if any(k in msg.lower() for k in ("timeout", "timed out")):
+            status = health.NETWORK_ERROR
+        elif "403" in msg or "401" in msg or "auth" in msg.lower():
+            status = health.AUTH_ERROR
+        elif "rate" in msg.lower() or "429" in msg:
+            status = health.RATE_LIMIT
+        else:
+            status = health.DOWN
+        health.record(name, status=status,
+                      latency_ms=(time.time() - t0) * 1000,
+                      records=0, error=msg[:200],
+                      http_ok=False, data_ok=False, pipeline_ok=False)
         # 规则 3.3: 单个 Source 失败向上抛, 由 collect() 隔离
         return {
             "run_id": run_id,

@@ -47,3 +47,11 @@ def db():
         p = os.environ["BB_NODE_DB"] + suffix
         if os.path.exists(p):
             os.remove(p)
+    # 清理共享 raw 目录(避免 P2P 测试间残留)
+    raw_root = os.path.join(_TMP, "data", "raw")
+    if os.path.isdir(raw_root):
+        for src in os.listdir(raw_root):
+            d = os.path.join(raw_root, src)
+            if os.path.isdir(d):
+                for fn in os.listdir(d):
+                    os.remove(os.path.join(d, fn))

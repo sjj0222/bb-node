@@ -2,49 +2,71 @@
 
 覆盖: Node Identity、正常同步、去重、hash 完整性、冲突(不覆盖)、
 非法数据 REJECT、协议版本不匹配、增量补同步。
+RAW 同步对象 = 原样 raw 文件(规则 4/26, data/raw/<source>/<hash>.json)。
 """
 import json
+import os
 import time
 
 import pytest
 
 from p2p import node as p2p
-from database.db import connect, data_hash, init as db_init
+from core import env
+from database.db import connect, data_hash
 
 
-def _make_peer_bundle(rows, node="node-b", obj="raw"):
-    """从任意 rows 构造 peer 数据包(模拟跨节点导出, 规则 30: RAW 保留采集节点身份)。"""
-    items = []
-    for r in rows:
-        it = dict(r)
-        it.pop("id", None)
-        it["node_id"] = node  # RAW 归属采集节点(规则 30: 不同节点 RAW 并存)
-        it["_hash"] = data_hash({k: v for k, v in it.items()
-                                 if k != "_hash"})
-        items.append(it)
-    return {"node_id": node, "protocol_version": p2p.PROTOCOL_VERSION,
-            "object_type": obj, "from_cursor": 0, "to_cursor": len(items),
-            "items": items, "status": "OK"}
+def _raw_file(node, i, content=None, t=None):
+    """构造一条 raw 文件记录 {source, raw_id, data_hash, content, collected_at}。"""
+    t = t or int(time.time() * 1000) + i
+    content = content or json.dumps({"src": node, "i": i, "t": t},
+                                    ensure_ascii=False)
+    h = data_hash(content)
+    return {
+        "source": node,
+        "raw_id": h,
+        "data_hash": h,
+        "content": content,
+        "collected_at": t,
+    }
 
 
-def _seed_raw(conn, n=3, node="node-a", base_t=None):
-    now = base_t or int(time.time() * 1000)
+def _seed_raw_files(n, node="node-a", start=None):
+    """在本地 raw 目录写 n 个 raw 文件。"""
+    start = start if start is not None else int(time.time() * 1000)
+    d = env.raw_dir(node)
+    os.makedirs(d, exist_ok=True)
     for i in range(n):
-        conn.execute("""insert or ignore into matches(
-            match_id,league_id,league,begin_time,home,away,source,status,updated_at)
-            values(?,?,?,?,?,?,?,?,?)""",
-            ("m%d" % i, 1, "L", now, "A", "B", node, "pre", now))
-        conn.execute("""insert or ignore into markets(
-            market_id,match_id,mty,pe,updated_at)
-            values(?,?,?,?,?)""",
-            ("mk%d" % i, "m%d" % i, "3", "0", now))
-        conn.execute("""insert or ignore into snapshots(
-            match_id,market_id,option_index,option,line,odds,
-            collected_at,node_id,data_hash)
-            values(?,?,?,?,?,?,?,?,?)""",
-            ("m%d" % i, "mk%d" % i, 0, "opt%d" % i, "-0.5", 1.9,
-             now + i * 1000, node, data_hash({"x": i, "t": now})))
-    conn.commit()
+        it = _raw_file(node, i, t=start + i * 1000)
+        fn = os.path.join(d, "%s.json" % it["data_hash"])
+        with open(fn, "w", encoding="utf-8") as f:
+            f.write(it["content"])
+        os.utime(fn, (it["collected_at"] / 1000, it["collected_at"] / 1000))
+    return n
+
+
+def _bundle(items, node="node-b", obj="raw"):
+    out = []
+    for it in items:
+        p = {k: v for k, v in it.items() if k != "_hash"}
+        out.append(dict(p, _hash=data_hash(p)))
+    return {"node_id": node, "protocol_version": p2p.PROTOCOL_VERSION,
+            "object_type": obj, "from_cursor": 0,
+            "to_cursor": len(out), "items": out, "status": "OK"}
+
+
+def _local_raw_count(node=None):
+    base = os.path.join(env.data_dir(), "raw")
+    if not os.path.isdir(base):
+        return 0
+    n = 0
+    for src in os.listdir(base):
+        d = os.path.join(base, src)
+        if not os.path.isdir(d):
+            continue
+        if node and src != node:
+            continue
+        n += len([f for f in os.listdir(d) if f.endswith(".json")])
+    return n
 
 
 def test_node_identity(db):
@@ -59,39 +81,39 @@ def test_node_identity(db):
 
 
 def test_export_bundle(db):
-    _seed_raw(db, 3)
+    _seed_raw_files(3)
     b = p2p.export_bundle("raw", cursor=0, limit=10)
     assert b["node_id"] == p2p.NODE_ID
     assert b["protocol_version"] == p2p.PROTOCOL_VERSION
     assert len(b["items"]) == 3
     assert all("_hash" in it for it in b["items"])
+    assert all(it["source"] == "node-a" for it in b["items"])
 
 
 def test_sync_raw_dedup(db):
     """规则 27: 跨节点正常同步 + 重复同步去重。"""
-    _seed_raw(db, 3, node="node-a")
-    c = connect()
-    rows = c.execute("select * from snapshots order by id").fetchall()
-    c.close()
-    b = _make_peer_bundle(rows, node="node-b")
+    _seed_raw_files(3, node="node-a")
+    b = _bundle([_raw_file("node-b", i) for i in range(3)])
     r1 = p2p.sync_from(b, "raw")
     assert r1["status"] == "OK" and r1["written"] == 3
+    assert _local_raw_count("node-b") == 3
     # 重复同步 -> 去重, 不重复写入(规则 27)
     r2 = p2p.sync_from(b, "raw")
     assert r2["written"] == 0
+    assert _local_raw_count("node-b") == 3
 
 
 def test_sync_rejects_tampered_hash(db):
-    _seed_raw(db, 1)
+    _seed_raw_files(1)
     b = p2p.export_bundle("raw", cursor=0, limit=10)
-    b["items"][0]["odds"] = 99.9  # 篡改但不更新 hash
+    b["items"][0]["content"] = "tampered"  # 篡改但不更新 hash
     r = p2p.sync_from(b, "raw")
     assert r["rejected"] == 1
     assert r["status"] != "OK"
 
 
 def test_sync_protocol_mismatch(db):
-    _seed_raw(db, 1)
+    _seed_raw_files(1)
     b = p2p.export_bundle("raw", cursor=0, limit=10)
     b["protocol_version"] = "9.9"
     r = p2p.sync_from(b, "raw")
@@ -101,41 +123,41 @@ def test_sync_protocol_mismatch(db):
 
 def test_sync_conflict_no_overwrite(db):
     """规则 30/31: RAW 冲突 -> 两份都保留, 不覆盖。"""
-    c = connect()
-    _seed_raw(c, 1)
-    c.close()
-    b = p2p.export_bundle("raw", cursor=0, limit=10)
-    # 本地已有同 node 同记录, 但值不同(改 hash 后仍冲突因 key 相同)
-    b["items"][0]["odds"] = 2.5
-    b["items"][0]["_hash"] = data_hash(
-        {k: v for k, v in b["items"][0].items() if k != "_hash"})
-    r = p2p.sync_from(b, "raw", force=False)
-    c = connect()
-    n = c.execute(
-        "select count(*) from snapshots where match_id='m0'").fetchone()[0]
-    c.close()
-    assert n == 1  # 原记录保留
+    it = _raw_file("node-b", 0)
+    b = _bundle([it], node="node-b")
+    r1 = p2p.sync_from(b, "raw")
+    assert r1["written"] == 1
+    # 同 hash 名不同内容(内容被篡改但 data_hash 相同) -> conflict,
+    # 原文件保留, 新内容落盘为 .<node>.json(规则 30: 两份并存)
+    it2 = dict(it, content="different content")
+    it2["_hash"] = data_hash({k: v for k, v in it2.items()
+                              if k != "_hash"})
+    b2 = _bundle([it2], node="node-b")
+    r2 = p2p.sync_from(b2, "raw")
+    d = env.raw_dir("node-b")
+    files = [f for f in os.listdir(d) if f.endswith(".json")]
+    assert r2["conflict"] >= 1
+    assert len(files) == 2  # 两份并存
 
 
 def test_incremental_sync_cursor(db):
     """规则 28/57: 增量补同步(断线恢复), 只拉取缺失范围。"""
-    # peer 侧有 2 条
-    _seed_raw(db, 2, node="node-a")
-    c = connect()
-    rows1 = c.execute("select * from snapshots where id<=2 order by id").fetchall()
-    c.close()
-    b1 = _make_peer_bundle(rows1, node="node-b")
+    start = int(time.time() * 1000)
+    _seed_raw_files(2, node="peer-a", start=start)
+    b1 = p2p.export_bundle("raw", cursor=0, limit=10)
+    assert len(b1["items"]) == 2
     r1 = p2p.sync_from(b1, "raw")
-    assert r1["written"] == 2
+    # 本地已存在同源同内容 -> 幂等去重(规则 27)
+    assert r1["written"] == 0
 
-    # peer 侧新增 1 条(更大 id)
-    _seed_raw(db, 1, node="node-a", base_t=int(time.time() * 1000))
-    c = connect()
-    rows2 = c.execute("select * from snapshots where id>2 order by id").fetchall()
-    c.close()
-    b2 = _make_peer_bundle(rows2, node="node-b")
+    # peer 侧新增 1 条(更大 mtime) -> 增量导出只含缺失范围
+    _seed_raw_files(1, node="peer-a", start=start + 60000)
+    b2 = p2p.export_bundle("raw", cursor=b1["to_cursor"], limit=10)
+    assert b2["from_cursor"] == b1["to_cursor"]
+    assert len(b2["items"]) == 1
     r2 = p2p.sync_from(b2, "raw")
-    assert r2["written"] == 1
+    assert r2["written"] == 0  # 同源同内容去重
+    assert _local_raw_count("peer-a") == 3
 
 
 def test_sync_unified_conflict(db):

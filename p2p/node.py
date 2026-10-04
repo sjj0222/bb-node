@@ -111,7 +111,7 @@ def _verify_batch(items, object_type):
             else:
                 ok.append(payload)
         else:
-            for f in ("match_id", "market_id", "collected_at", "data_hash"):
+            for f in ("source", "raw_id", "data_hash", "content"):
                 if f not in payload:
                     bad.append(("MISSING_FIELD", f))
                     break
@@ -122,23 +122,47 @@ def _verify_batch(items, object_type):
 
 def _export_cursor(object_type, cursor, limit, from_node):
     """导出 cursor 之后的数据(增量, 规则 28/57)。"""
-    c = connect()
     if object_type == "unified":
+        c = connect()
         rows = c.execute(
             """select * from unified_snapshots
                where id > ? order by id limit ?""", (cursor, limit)).fetchall()
         out = [dict(r) for r in rows]
-    else:
-        # RAW = snapshots 表(原始盘口快照)
-        rows = c.execute(
-            """select * from snapshots where id > ? order by id limit ?""",
-            (cursor, limit)).fetchall()
-        out = [dict(r) for r in rows]
-    c.close()
-    for it in out:
+        c.close()
+        for it in out:
+            it["_hash"] = data_hash({k: v for k, v in it.items()
+                                     if k not in ("_hash",)})
+        return out
+
+    # RAW = 原样保存的 raw 文件(规则 4/26); 以 mtime 作增量 cursor
+    raw_root = os.path.join(env.data_dir(), "raw")
+    items = []
+    if os.path.isdir(raw_root):
+        for src in sorted(os.listdir(raw_root)):
+            d = os.path.join(raw_root, src)
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d)):
+                if not fn.endswith(".json"):
+                    continue
+                mtime = int(os.path.getmtime(os.path.join(d, fn)) * 1000)
+                if mtime <= cursor:
+                    continue
+                with open(os.path.join(d, fn), encoding="utf-8") as f:
+                    content = f.read()
+                items.append({
+                    "source": src,
+                    "raw_id": fn[:-5],
+                    "data_hash": fn[:-5],
+                    "collected_at": mtime,
+                    "content": content,
+                })
+    items.sort(key=lambda x: (x["collected_at"], x["raw_id"]))
+    items = items[:limit]
+    for it in items:
         it["_hash"] = data_hash({k: v for k, v in it.items()
                                  if k not in ("_hash",)})
-    return out
+    return items
 
 
 def _apply_batch(object_type, items, from_node, force=False):
@@ -188,17 +212,21 @@ def _apply_batch(object_type, items, from_node, force=False):
                      it.get("pipeline_version"), int(time.time() * 1000)))
                 written += 1
             else:
-                # RAW: snapshots 表 UNIQUE(node_id,match_id,market_id,
-                #      option_index,collected_at,data_hash) -> 天然去重
-                c.execute("""insert or ignore into snapshots(
-                    match_id,market_id,option_index,option,line,odds,
-                    collected_at,node_id,data_hash)
-                    values(?,?,?,?,?,?,?,?,?)""",
-                    (it["match_id"], it["market_id"], it.get("option_index", 0),
-                     it.get("option"), it.get("line"), it.get("odds"),
-                     it.get("collected_at"), it.get("node_id", from_node),
-                     it["data_hash"]))
-                written += c.execute("select changes()").fetchone()[0]
+                # RAW = 原样 raw 文件(规则 4/30): 以内容 hash 命名, 同名同内容去重;
+                # 不同节点 RAW 并存(写入接收节点 raw 目录, 不覆盖其他节点事实)
+                raw_root = env.raw_dir(str(it.get("source", from_node)))
+                os.makedirs(raw_root, exist_ok=True)
+                fn = os.path.join(raw_root, "%s.json" % it["data_hash"])
+                if os.path.exists(fn):
+                    with open(fn, encoding="utf-8") as f:
+                        if f.read() == it.get("content"):
+                            continue  # 已存在且一致 -> 去重
+                    conflict += 1  # 同名不同内容 -> 保留两份(规则 30)
+                    fn = os.path.join(
+                        raw_root, "%s.%s.json" % (it["data_hash"], from_node[:8]))
+                with open(fn, "w", encoding="utf-8") as f:
+                    f.write(it.get("content", ""))
+                written += 1
         c.commit()
     finally:
         c.close()
@@ -230,6 +258,8 @@ def sync_from(peer, object_type, cursor=0, limit=500, force=False):
 
     items = bundle.get("items", [])
     ok_items, bad = _verify_batch(items, object_type)
+
+    # RAW 前置(规则 30): raw 文件无表级依赖, 无需 base
     written, conflict, rejected = _apply_batch(
         object_type, ok_items, bundle.get("node_id", "?"), force=force)
 
@@ -250,8 +280,13 @@ def export_bundle(object_type, cursor=0, limit=500, to_node=None):
     """导出增量数据包(规则 57: from/to/cursor/batch/hash/status)。"""
     register_node()
     items = _export_cursor(object_type, cursor, limit, NODE_ID)
-    to_cursor = max((it["id"] for it in items), default=cursor)
-    return {
+    if items and "id" in items[0]:
+        to_cursor = max((it["id"] for it in items), default=cursor)
+    else:
+        # RAW 文件: 以 collected_at 为 cursor(增量, 规则 28/57)
+        to_cursor = max((it.get("collected_at", cursor) for it in items),
+                        default=cursor)
+    bundle = {
         "node_id": NODE_ID,
         "protocol_version": PROTOCOL_VERSION,
         "software_version": SOFTWARE_VERSION,
@@ -262,6 +297,7 @@ def export_bundle(object_type, cursor=0, limit=500, to_node=None):
         "items": items,
         "status": "OK",
     }
+    return bundle
 
 
 def incremental_sync(peer_state, object_type, peer, limit=500, force=False):

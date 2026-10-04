@@ -173,11 +173,22 @@ class Monitor:
 
     # ---------- 运行模式 ----------
     def run_once(self):
-        """Manual Mode: 执行一轮即返回。"""
+        """Manual Mode: 执行一轮即返回(单轮异常 -> ERROR, 不崩溃)。"""
         self.state = STARTING
         self._persist_state()
         self.state = RUNNING
-        ok = self._run_round()
+        try:
+            ok = self._run_round()
+        except Exception as e:
+            self.errors += 1
+            self.state = ERROR
+            alert_mod.emit("PIPELINE_ERROR",
+                           "monitor round crashed: %s" % str(e)[:200],
+                           severity="CRITICAL",
+                           monitor_run_id=self.monitor_run_id)
+            log_event("ERROR", "MONITOR", "round", str(e)[:300],
+                      self.monitor_run_id)
+            ok = False
         self.state = RUNNING if (ok and self.errors == 0) else DEGRADED
         self._persist_state(ended=True)
         return ok
