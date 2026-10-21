@@ -9,6 +9,7 @@ from core import env
 from database.db import connect, init, data_hash
 from core.log import start, finish, error
 from sources.registry import get_adapter, enabled_sources
+from sources.contract import redact, classify_exception
 from mapping.service import auto_map
 from mapping.market_service import map_and_save
 from mapping.unified_service import unify
@@ -271,24 +272,22 @@ def collect_source(name, received_at=None):
         }
 
     except Exception as e:
-        _finish_run(run_id, match_count, 0, False, str(e),
-                    meta=meta_total)
-        error("COLLECT", e)
-        finish(log_id, "ERROR", match_count, 0, str(e)[:200])
-        # V0.2 Source Health(规则 14): HTTP/数据/管道失败区分
-        status = health.INVALID_RESPONSE
-        msg = str(e)[:300]
-        if any(k in msg.lower() for k in ("timeout", "timed out")):
-            status = health.NETWORK_ERROR
-        elif "403" in msg or "401" in msg or "auth" in msg.lower():
-            status = health.AUTH_ERROR
-        elif "rate" in msg.lower() or "429" in msg:
-            status = health.RATE_LIMIT
-        else:
-            status = health.DOWN
+        _finish_run(run_id, match_count, 0, False,
+                    redact(str(e)), meta=meta_total)
+        error("COLLECT", redact(str(e))[:200])
+        finish(log_id, "ERROR", match_count, 0, redact(str(e))[:200])
+        # 规格 §6.1/Phase 3: 按 Adapter 契约分类错误, 映射到 Source Health
+        cls = classify_exception(e)
+        status = {
+            "AUTH": health.AUTH_ERROR,
+            "RATE_LIMIT": health.RATE_LIMIT,
+            "RETRYABLE": health.DOWN,
+            "NON_RETRYABLE": health.INVALID_RESPONSE,
+            "PROTOCOL_CHANGE": health.INVALID_RESPONSE,
+        }.get(cls, health.DOWN)
         health.record(name, status=status,
                       latency_ms=(time.time() - t0) * 1000,
-                      records=0, error=msg[:200],
+                      records=0, error=redact(str(e))[:200],
                       http_ok=False, data_ok=False, pipeline_ok=False)
         # 规则 3.3: 单个 Source 失败向上抛, 由 collect() 隔离
         return {

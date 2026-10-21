@@ -5,6 +5,7 @@ import hashlib
 import requests
 from core import env
 from .base import NormalizedRecord
+from .contract import BaseAdapter, backoff_sleep, classify_exception
 
 TARGET_LEAGUES = {
     11140: "欧冠", 11062: "英超", 10815: "西甲", 11018: "意甲",
@@ -12,7 +13,7 @@ TARGET_LEAGUES = {
 }
 
 
-class BBAdapter:
+class BBAdapter(BaseAdapter):
     source = "bb"
     bookmaker = None
 
@@ -35,6 +36,79 @@ class BBAdapter:
             self.leagues = dict(TARGET_LEAGUES)
         self.timeout = timeout
         self.session = requests.Session()
+        self._active_run_type = 3
+
+    # ---------- 契约(规格 §6.1) ----------
+    def capabilities(self):
+        pol = self.rate_limit_policy()
+        return {
+            "entities": ["match"],
+            "markets": ["asian_handicap", "over_under", "1x2"],
+            "paging": {"supported": True, "cursor": "page",
+                       "max_pages": pol["max_pages"]},
+            "incremental": False,
+            "run_types": [rt.get("type") for rt in
+                          (env.get("sources.bb.run_types")
+                           or [{"type": 3, "name": "今日"}])],
+        }
+
+    def health_check(self):
+        """连通性 + 授权状态; 只拉一页, 不拉大批数据。"""
+        try:
+            j, _ = self._get_page_with_retries(1, self._active_run_type)
+            if not j:
+                return False, "page fetch failed"
+            if j.get("success"):
+                return True, "ok"
+            return False, "business error: %s" % str(j)[:120]
+        except Exception as e:
+            return False, "error: %s" % str(e)[:120]
+
+    def fetch_page(self, cursor, window=50, limits=None):
+        """按契约拉一页; 返回 (payload, next_cursor, source_time, meta)。"""
+        j, retries = self._get_page_with_retries(int(cursor),
+                                                 self._active_run_type)
+        if j is None:
+            return None, None, None, {"retries": retries, "partial": True,
+                                      "error_code": "PAGE_FAILED"}
+        d = j.get("data") or {}
+        rec = d.get("records") or []
+        total = d.get("total") or 0
+        size = d.get("size") or window
+        next_cursor = int(cursor) + 1 \
+            if int(cursor) * size < total and rec else None
+        return (j, next_cursor,
+                d.get("serverTime") or j.get("timestamp"),
+                {"retries": retries, "partial": False})
+
+    def parse_records(self, payload):
+        """payload -> 源记录列表(按关注联赛过滤)。"""
+        d = (payload or {}).get("data") or {}
+        out = []
+        for m in d.get("records") or []:
+            lg = m.get("lg") or {}
+            if not self.leagues or lg.get("id") in self.leagues:
+                out.append(m)
+        return out
+
+    def rate_limit_policy(self):
+        return self._policy("sources.bb", {
+            "max_retries": 3, "backoff_base": 2.0, "backoff_max": 20.0,
+            "jitter": [0.5, 1.5], "max_pages": 20,
+            "max_duration_s": 180, "max_response_bytes": 5 * 1024 * 1024,
+            "respect_retry_after": True,
+        })
+
+    def classify_error(self, error):
+        return classify_exception(error)
+
+    def detect_protocol_shift(self, payload):
+        """协议变化检测: 响应缺少 success/data 契约键。"""
+        if not isinstance(payload, dict):
+            return True
+        if "success" not in payload or "data" not in payload:
+            return True
+        return False
 
     # ---------- RAW ----------
     def save_raw(self, match, raw_dir):
@@ -69,8 +143,10 @@ class BBAdapter:
         return j
 
     def _get_page_with_retries(self, page, typ):
-        """单页拉取(含重试), 返回 (json|None, 重试次数)。"""
-        for n in range(3):
+        """单页拉取(指数退避重试, 遵守 Retry-After), 返回 (json|None, 重试次数)。"""
+        policy = self.rate_limit_policy()
+        max_retries = int(policy.get("max_retries", 3))
+        for n in range(max_retries + 1):
             try:
                 b = {
                     "current": page,
@@ -87,10 +163,18 @@ class BBAdapter:
                 j = r.json()
                 if j.get("success"):
                     return j, n
+                # 业务拒绝(200 但 success=False): 不可重试
+                return None, n + 1
             except Exception as e:
-                print("bb 重试", n + 1, str(e)[:60], flush=True)
-                time.sleep(2)
-        return None, 3
+                cls = classify_exception(e)
+                resp = getattr(e, "response", None)
+                if cls in ("RATE_LIMIT", "RETRYABLE") and n < max_retries:
+                    backoff_sleep(policy, n, response=resp)
+                    continue
+                print("bb %s(第%s次) %s" % (
+                    cls, n + 1, str(e)[:80]), flush=True)
+                time.sleep(1)
+        return None, max_retries + 1
 
     # ---------- 采集 ----------
     def fetch_with_meta(self, run_type=3, received_at=None):
@@ -98,7 +182,12 @@ class BBAdapter:
 
         meta: {"pages", "retries", "partial", "error_code"}
         R2 修复: 任一页失败 -> partial=True 显式标记, 不再静默视为完整成功。
+        Phase 3: max_pages/max_duration 护栏 + 协议变化检测。
         """
+        policy = self.rate_limit_policy()
+        max_pages = int(policy.get("max_pages", 20))
+        max_duration = float(policy.get("max_duration_s", 180))
+        t0 = time.time()
         matches = {}
         page = 1
         retries = 0
@@ -106,12 +195,24 @@ class BBAdapter:
         partial = False
         error_code = None
         while True:
+            if page > max_pages:
+                partial = True
+                error_code = error_code or "MAX_PAGES"
+                break
+            if time.time() - t0 > max_duration:
+                partial = True
+                error_code = error_code or "TIME_LIMIT"
+                break
             j, r = self._get_page_with_retries(page, run_type)
             retries += r
             pages += 1
             if j is None:
                 partial = True
                 error_code = error_code or "PAGE_FAILED"
+                break
+            if self.detect_protocol_shift(j):
+                partial = True
+                error_code = error_code or "PROTOCOL_CHANGE"
                 break
             d = j.get("data") or {}
             rec = d.get("records") or []

@@ -19,6 +19,7 @@ import hashlib
 import requests
 from core import env
 from .base import NormalizedRecord
+from .contract import BaseAdapter, classify_exception
 
 DEFAULT_MARKET_TYPES = {
     "1": "binary",
@@ -53,7 +54,7 @@ def pct_to_decimal(pct):
     return None
 
 
-class SXBetAdapter:
+class SXBetAdapter(BaseAdapter):
     source = "sx"
     bookmaker = None
 
@@ -69,18 +70,81 @@ class SXBetAdapter:
         self.timeout = timeout
         self.session = requests.Session()
 
+    # ---------- 契约(规格 §6.1) ----------
+    def capabilities(self):
+        return {
+            "entities": ["market"],
+            "markets": sorted(self.market_types.values()),
+            "paging": {"supported": False, "cursor": None, "max_pages": 1},
+            "incremental": False,
+        }
+
+    def health_check(self):
+        """连通性 + 授权状态: 只拉 market 列表, 不拉盘口明细。"""
+        try:
+            markets = self.fetch_markets()
+            if not isinstance(markets, list):
+                return False, "markets payload not a list"
+            return True, "ok markets=%s" % len(markets)
+        except Exception as e:
+            return False, "error: %s" % str(e)[:120]
+
+    def fetch_page(self, cursor, window=50, limits=None):
+        raise NotImplementedError(
+            "sx 无分页契约: 使用 fetch()/fetch_markets()")
+
+    def parse_records(self, payload):
+        """payload(data.markets) -> 源记录列表。"""
+        d = (payload or {}).get("data") or {}
+        ms = d.get("markets")
+        return ms if isinstance(ms, list) else []
+
+    def rate_limit_policy(self):
+        return self._policy("sources.sx", {
+            "max_retries": 2, "backoff_base": 1.0, "backoff_max": 10.0,
+            "jitter": [0.5, 1.5], "max_pages": 1,
+            "max_duration_s": 120, "max_response_bytes": 5 * 1024 * 1024,
+            "respect_retry_after": True,
+        })
+
+    def classify_error(self, error):
+        return classify_exception(error)
+
+    def detect_protocol_shift(self, payload):
+        if not isinstance(payload, dict):
+            return True
+        d = payload.get("data")
+        if not isinstance(d, dict) or "markets" not in d:
+            return True
+        return False
+
     # ---------- 网络 ----------
     def fetch_markets(self):
-        r = self.session.get(
-            "%s/markets/active" % self.base_url,
-            params={"sportIds": self.sport_id},
-            timeout=self.timeout)
-        r.raise_for_status()
-        j = r.json()
-        if j.get("status") != "success":
-            raise RuntimeError(
-                "sx markets response not success: %s" % str(j)[:200])
-        return (j.get("data") or {}).get("markets") or []
+        policy = self.rate_limit_policy()
+        max_retries = int(policy.get("max_retries", 2))
+        from .contract import backoff_sleep
+        for n in range(max_retries + 1):
+            try:
+                r = self.session.get(
+                    "%s/markets/active" % self.base_url,
+                    params={"sportIds": self.sport_id},
+                    timeout=self.timeout)
+                r.raise_for_status()
+                j = r.json()
+                if self.detect_protocol_shift(j):
+                    raise RuntimeError(
+                        "sx protocol shift: missing data.markets")
+                if j.get("status") != "success":
+                    raise RuntimeError(
+                        "sx markets response not success: %s" % str(j)[:200])
+                return (j.get("data") or {}).get("markets") or []
+            except Exception as e:
+                cls = classify_exception(e)
+                resp = getattr(e, "response", None)
+                if cls in ("RATE_LIMIT", "RETRYABLE") and n < max_retries:
+                    backoff_sleep(policy, n, response=resp)
+                    continue
+                raise
 
     def fetch_odds(self, market_hash):
         r = self.session.get(
