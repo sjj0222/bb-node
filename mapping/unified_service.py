@@ -33,6 +33,7 @@ def unify(record, canonical_match_id=None, conn=None):
                 "server_time": record.server_time,
                 "received_at": record.received_at,
                 "raw_ref": record.raw_ref,
+                "league_id": getattr(record, "league_id", None),
                 "pipeline_version": pipeline_version,
             })(),
             canonical_match_id=canonical_match_id,

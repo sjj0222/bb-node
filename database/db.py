@@ -453,6 +453,60 @@ def _migrate_v7(c):
     _add_column(c, "unified_snapshots", "line_quarters", "TEXT")
 
 
+V8_VIEWS = """
+CREATE VIEW IF NOT EXISTS latest_unified_quotes AS
+SELECT
+    u.id AS quote_id,
+    u.canonical_match_id,
+    u.source,
+    u.source_match_id,
+    u.market_type,
+    u.period,
+    u.line,
+    u.line_quarters,
+    u.side,
+    u.option,
+    u.odds,
+    u.odds_raw,
+    u.event_time AS event_time,
+    u.received_at AS observed_at,
+    u.created_at AS ingested_at,
+    u.time_quality,
+    u.content_hash,
+    u.league_id,
+    u.superseded
+FROM unified_snapshots u
+WHERE u.superseded = 0
+  AND u.id = (
+    SELECT u2.id FROM unified_snapshots u2
+    WHERE u2.canonical_match_id = u.canonical_match_id
+      AND u2.source = u.source
+      AND u2.market_type = u.market_type
+      AND COALESCE(u2.period,'') = COALESCE(u.period,'')
+      AND COALESCE(u2.line,-999) = COALESCE(u.line,-999)
+      AND u2.superseded = 0
+    ORDER BY u2.received_at DESC, u2.id DESC
+    LIMIT 1
+  );
+"""
+
+
+def _migrate_v8(c):
+    """V8(Phase 7): Unified 查询层(规格 §9)。
+
+    - unified_snapshots 增 league_id(按联赛查询)/content_hash(变更检测)/
+      time_quality(来源时间缺失标记, 不伪造时间)
+    - latest_unified_quotes 视图: 最新值=查询视图(规格 §9.2),
+      显式暴露 event_time/observed_at/ingested_at 三态
+    """
+    _add_column(c, "unified_snapshots", "league_id", "INTEGER")
+    _add_column(c, "unified_snapshots", "content_hash", "TEXT")
+    _add_column(c, "unified_snapshots", "time_quality", "TEXT DEFAULT 'ok'")
+    c.executescript(V8_VIEWS)
+    c.execute("""CREATE INDEX IF NOT EXISTS idx_unified_league
+                 ON unified_snapshots(league_id, received_at)""")
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
@@ -460,6 +514,7 @@ MIGRATIONS = {
     5: _migrate_v5,
     6: _migrate_v6,
     7: _migrate_v7,
+    8: _migrate_v8,
 }
 
 

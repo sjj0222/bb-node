@@ -27,3 +27,5 @@ class NormalizedRecord:
     # Phase 6: 原始赔率与四分之一球编码(规格 §5.2)
     odds_raw: str = ""
     line_quarters: str = ""
+    # Phase 7: 联赛(Unified 按联赛查询, 规格 §9.3)
+    league_id: Optional[int] = None

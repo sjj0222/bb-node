@@ -50,9 +50,13 @@ def init_unified():
     c.close()
 
 def save_unified(record, canonical_match_id=None, conn=None):
-    now=int(time.time()*1000)
+    now = int(time.time() * 1000)
     own = conn is None
     c = conn or connect()
+
+    # Phase 7: 内容哈希(变更检测/幂等, 规格 §9.2) + 时间质量标记
+    content_hash = _content_hash(record, canonical_match_id)
+    time_quality = "ok" if getattr(record, "event_time", None) else "approx"
 
     c.execute("""
     INSERT OR IGNORE INTO unified_snapshots
@@ -61,8 +65,9 @@ def save_unified(record, canonical_match_id=None, conn=None):
      market_type,period,line_raw,line,side,
      option,odds,odds_raw,line_quarters,
      event_time,server_time,
-     received_at,raw_ref,pipeline_version,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     received_at,raw_ref,pipeline_version,
+     league_id, content_hash, time_quality, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """,(
         canonical_match_id,
         record.source,
@@ -83,12 +88,31 @@ def save_unified(record, canonical_match_id=None, conn=None):
         record.received_at,
         record.raw_ref,
         getattr(record, "pipeline_version", None),
+        getattr(record, "league_id", None),
+        content_hash,
+        time_quality,
         now
     ))
 
     if own:
         c.commit()
         c.close()
+
+
+def _content_hash(record, canonical_match_id):
+    import hashlib
+    key = "%s|%s|%s|%s|%s|%s|%s|%s|%s" % (
+        canonical_match_id or "",
+        getattr(record, "source", ""),
+        getattr(record, "source_market_id", ""),
+        getattr(record, "market_type", ""),
+        getattr(record, "period", ""),
+        getattr(record, "line", ""),
+        getattr(record, "option", ""),
+        getattr(record, "odds", ""),
+        getattr(record, "received_at", ""),
+    )
+    return hashlib.sha256(key.encode()).hexdigest()
 
 def get_match(canonical_match_id,limit=500):
     c=connect()

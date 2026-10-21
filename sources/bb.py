@@ -309,6 +309,7 @@ class BBAdapter(BaseAdapter):
                         normalizer_name=self.source,
                         normalizer_version=self.NORMALIZER_VERSION,
                         config_hash=cfg_hash,
+                        league_id=lg.get("id"),
                     ))
 
         return out

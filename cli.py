@@ -258,6 +258,53 @@ def _cmd_quality(args):
     print(dq())
 
 
+def _cmd_unified(args):
+    """Phase 7: Unified 查询(规格 §9.3)。"""
+    from database.db import connect
+    from unified import query as uq
+    c = connect()
+    try:
+        if args.sub == "query":
+            rows = uq.query_unified(
+                c, match_id=args.match, league=args.league,
+                source=args.source, market_type=args.market,
+                period=args.period, side=args.side, line=args.line,
+                min_odds=args.min_odds, max_odds=args.max_odds,
+                fresh_ms=args.fresh_ms, limit=args.limit)
+            _dump(rows, args)
+        elif args.sub == "latest":
+            _dump(uq.latest_quotes(c, match_id=args.match,
+                                   source=args.source,
+                                   market_type=args.market), args)
+        elif args.sub == "series":
+            if not args.match or not args.market:
+                raise SystemExit("series 需要 --match 与 --market")
+            _dump(uq.market_series(c, args.match, args.market,
+                                   period=args.period), args)
+        elif args.sub == "compare":
+            if not args.match or not args.market:
+                raise SystemExit("compare 需要 --match 与 --market")
+            _dump(uq.cross_source_compare(
+                c, args.match, args.market,
+                period=args.period or "full_time"), args)
+        elif args.sub == "plan":
+            _dump(uq.plan_report(c), args)
+    finally:
+        c.close()
+
+
+def _dump(rows, args):
+    import json as _json
+    if getattr(args, "json", False):
+        _out_json(rows)
+        return
+    if isinstance(rows, list):
+        for r in rows[:50]:
+            print(r)
+    else:
+        print(rows)
+
+
 def _cmd_mapping(args):
     """Phase 5: 映射人工审批 CLI(规格 §8.3, 可审计)。"""
     from database.db import connect
@@ -395,6 +442,22 @@ def main():
 
     sub.add_parser("quality").add_argument("sub", choices=["run"], default="run")
 
+    up = sub.add_parser("unified", help="Phase 7: Unified 查询(规格 §9.3)")
+    up.add_argument("sub", choices=["query", "latest", "series",
+                                    "compare", "plan"])
+    up.add_argument("--match")
+    up.add_argument("--league", type=int)
+    up.add_argument("--source")
+    up.add_argument("--market")
+    up.add_argument("--period")
+    up.add_argument("--side")
+    up.add_argument("--line", type=float)
+    up.add_argument("--min-odds", type=float)
+    up.add_argument("--max-odds", type=float)
+    up.add_argument("--fresh-ms", type=int)
+    up.add_argument("--limit", type=int, default=100)
+    _add_json(up)
+
     mp = sub.add_parser("mapping", help="Phase 5: 映射人工审批与审计(规格 §8.3)")
     mp.add_argument("sub", choices=["list", "approve", "reject", "defer",
                                     "revoke", "audit"])
@@ -422,6 +485,7 @@ def main():
         "replay": _cmd_replay,
         "backtest": _cmd_backtest,
         "quality": _cmd_quality,
+        "unified": _cmd_unified,
         "mapping": _cmd_mapping,
     }
     if args.cmd not in handlers:
