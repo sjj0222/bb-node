@@ -20,6 +20,10 @@ DEFAULT_CONFIG_NAME = "config/config.json"
 DEFAULT_USER_CONFIG_NAME = "config/local.json"
 
 
+class ConfigError(Exception):
+    """配置缺失/损坏/不可解析(规格 13.1: 不再静默降级)。"""
+
+
 def base_dir():
     p = os.environ.get("BB_NODE_HOME")
     if p:
@@ -79,14 +83,28 @@ def user_config_path():
     return p if os.path.exists(p) else None
 
 
-def _read_json(path):
-    if not path or not os.path.exists(path):
+def _read_json(path, strict=False):
+    if not path:
+        if strict:
+            raise ConfigError("config path empty")
+        return {}
+    if not os.path.exists(path):
+        if strict:
+            raise ConfigError("config file not found: %s" % path)
         return {}
     try:
         with open(path, encoding="utf-8") as f:
             obj = json.load(f)
-        return obj if isinstance(obj, dict) else {}
-    except Exception:
+        if not isinstance(obj, dict):
+            if strict:
+                raise ConfigError("config root not a dict: %s" % path)
+            return {}
+        return obj
+    except ConfigError:
+        raise
+    except Exception as e:
+        if strict:
+            raise ConfigError("config parse failed: %s: %r" % (path, e))
         return {}
 
 
@@ -101,13 +119,33 @@ def _deep_merge(base, override):
     return out
 
 
-def load_config():
-    """合并后的配置: 基础配置 < 用户覆盖配置。任何一层解析失败视为空层。"""
-    base = _read_json(_config_path())
-    user = _read_json(user_config_path())
+def load_config(strict=False):
+    """合并后的配置: 基础配置 < 用户覆盖配置。
+
+    strict=True 时(启动入口/诊断): 基础配置缺失或解析失败即抛
+    ConfigError(规格 13.1: 不允许同一参数在不同入口有不同解释,
+    不静默降级); 用户覆盖配置缺失可接受(可选层), 但显式指定后
+    解析失败同样抛错。
+    """
+    base = _read_json(_config_path(), strict=strict)
+    user_path = user_config_path()
+    if user_path:
+        user = _read_json(user_path, strict=strict)
+    else:
+        user = {}
     if not user:
         return base
     return _deep_merge(base, user)
+
+
+def ensure_config():
+    """启动入口校验: 配置损坏/缺失时抛 ConfigError(不再静默降级)。
+
+    与 schema_version() 的关系: 版本兜底永远等于代码 DDL 的真实版本
+    (database/db.py SCHEMA_VERSION), 但配置本身缺失仍是明确错误。
+    """
+    load_config(strict=True)
+    return config_summary()
 
 
 def config():
@@ -126,10 +164,20 @@ def get(path, default=None):
 
 
 def schema_version():
+    """配置声明的 schema 版本; 读不到时回退到代码 DDL 的真实版本。
+
+    单一权威来源在 database/db.py 的 SCHEMA_VERSION 常量(迁移链所在),
+    禁止在此处另写一个数字兜底, 否则配置缺失时会出现"静默降级建出
+    缺列库"且自检全绿的问题(P0-1)。
+    """
     try:
-        return int(get("database.schema_version", 2))
+        v = get("database.schema_version", None)
+        if v is not None:
+            return int(v)
     except (TypeError, ValueError):
-        return 2
+        pass
+    from database.db import SCHEMA_VERSION
+    return SCHEMA_VERSION
 
 
 def pipeline_version():

@@ -590,6 +590,19 @@ def main():
     if args.cmd not in handlers:
         ap.print_help()
         return
+    # P0-1: 除 version/check/doctor/init 外, 配置缺失/损坏必须 hard fail
+    # (不再静默降级出缺列库); check/doctor 通过诊断项报告, init 建库
+    # 不依赖 config(迁移链只依赖 SCHEMA_VERSION 常量)。
+    if args.cmd not in ("version", "check", "doctor", "init"):
+        from core import env as _env
+        try:
+            _env.ensure_config()
+        except _env.ConfigError as e:
+            sys.stderr.write("bb-node: 配置错误: %s\n" % e)
+            sys.stderr.write(
+                "bb-node: 请检查 BB_NODE_CONFIG / BB_NODE_HOME 指向的"
+                " config/config.json(可解析且完整)。\n")
+            sys.exit(2)
     handlers[args.cmd](args)
 
 

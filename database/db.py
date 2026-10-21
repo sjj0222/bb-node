@@ -5,8 +5,40 @@ DB = env.db_path()
 
 os.makedirs(os.path.dirname(DB), exist_ok=True)
 
-# schema 版本: 新库直接创建当前版本, 旧库通过 MIGRATIONS 幂等升级
-SCHEMA_VERSION = env.schema_version()
+# schema 版本: 新库直接创建当前版本, 旧库通过 MIGRATIONS 幂等升级。
+# 单一权威来源: 必须与下方 MIGRATIONS 的最高键一致; 新增迁移时同步此
+# 常量(不要从 config 读取——配置缺失时不得静默降级建出缺列库, P0-1)。
+SCHEMA_VERSION = 11
+
+
+# 建库后必须存在的关键列(断言用, 防止 DDL/迁移失配)
+_REQUIRED_COLUMNS = {
+    "unified_snapshots": (
+        "odds_raw", "line_quarters", "league_id", "content_hash",
+        "time_quality", "superseded"),
+    "match_mappings": (
+        "evidence", "rule_version", "approval", "valid_from", "valid_to",
+        "operator", "note"),
+    "collection_runs": (
+        "run_type", "pages", "retries", "partial", "records_duplicate",
+        "error_code"),
+    "stability_runs": ("status_reason",),
+}
+
+
+def _verify_schema(c):
+    """迁移完成后断言关键列存在; 缺失即抛错, 不让缺列库带病运行。"""
+    missing = []
+    for table, cols in _REQUIRED_COLUMNS.items():
+        existing = {r[1] for r in c.execute(
+            "PRAGMA table_info(%s)" % table)}
+        for col in cols:
+            if col not in existing:
+                missing.append("%s.%s" % (table, col))
+    if missing:
+        raise RuntimeError(
+            "schema 校验失败: 缺少列 %s (迁移链未完整执行?)"
+            % ", ".join(missing))
 
 
 def connect(db=None):
@@ -1047,6 +1079,8 @@ def init(db=None):
             MIGRATIONS[ver](c)
             c.execute("PRAGMA user_version=%d" % ver)
 
+    # 迁移完成后断言关键列齐全(P0-1: 不允许缺列库带病运行)
+    _verify_schema(c)
     c.commit()
     c.close()
 

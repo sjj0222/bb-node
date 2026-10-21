@@ -32,8 +32,9 @@ STATUS_OK = {OK, RUNNING}
 
 
 def health_of(start_time):
+    """返回 (state, age_s)。无记录时返回 (NO_RUN, None), 类型恒定 tuple。"""
     if not start_time:
-        return NO_RUN
+        return NO_RUN, None
     age = round((int(time.time() * 1000) - start_time) / 1000, 1)
     state = OK if age <= env.stale_after_seconds() else STALE
     return state, age

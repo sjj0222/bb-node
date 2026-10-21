@@ -168,7 +168,12 @@ def source_check():
 
 
 def pipeline_check():
-    """最近一次 pipeline run 的状态摘要(只读)。"""
+    """最近一次 pipeline run 的状态摘要(只读)。
+
+    状态枚举单一来源 = core/status.py 常量(实际写入值是 OK/RUNNING/
+    ERROR, 不是 success/running——P3-12)。
+    """
+    from core.status import OK, RUNNING, ERROR, NO_RUN
     try:
         con = _db_ro_connect(env.db_path())
         try:
@@ -180,7 +185,8 @@ def pipeline_check():
                 return [{"name": "pipeline_last", "status": "NOT_RUN",
                          "detail": "无 pipeline 记录"}]
             run_id, stage, status, started, finished, error = row
-            st = "OK" if status == "success" else "WARN" if status == "running" else "FAIL"
+            st = (OK if status == OK else RUNNING if status == RUNNING
+                  else ERROR if status == ERROR else FAIL)
             return [{"name": "pipeline_last", "status": st,
                      "detail": "run_id=%s stage=%s status=%s error=%s" % (
                          run_id, stage, status, error)}]
@@ -193,10 +199,13 @@ def pipeline_check():
 def run_checks():
     """运行全部检查, 返回 [(name, status, detail), ...]。"""
     out = []
-    out.append({"name": "config_parse", "status": "OK", "detail": "config_hash=%s" % env.config_hash()[:16]})
-    if env.load_config() == {}:
-        out[0]["status"] = "FAIL"
-        out[0]["detail"] = "配置为空或不可解析: %s" % env._config_path()
+    try:
+        env.load_config(strict=True)
+        out.append({"name": "config_parse", "status": "OK",
+                    "detail": "config_hash=%s" % env.config_hash()[:16]})
+    except env.ConfigError as e:
+        out.append({"name": "config_parse", "status": "FAIL",
+                    "detail": str(e)})
     out.append({"name": "base_dir_writable",
                 "status": "OK" if os.access(env.base_dir(), os.W_OK) else "FAIL",
                 "detail": env.base_dir()})
