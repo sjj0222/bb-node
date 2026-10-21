@@ -14,9 +14,11 @@ class MarketMapping:
     period: str | None
     line_raw: str | None
     line: float | None
+    line_quarters: str | None      # Phase 6: 四分之一球编码(规格 §5.2)
     side: str | None
     option: str
     odds: float | None
+    odds_raw: str | None = None    # Phase 6: 原始赔率始终保留(规格 §5.2)
     status: str = MAPPED
 
 
@@ -62,6 +64,47 @@ def parse_line(v):
             return None
 
     return None
+
+
+def parse_line_quarters(v):
+    """盘口线 -> 四分之一球编码(规格 §5.2, R1 修复)。
+
+    返回 (quarters TEXT "LOW:HIGH", mid_quarters int) 或 (None, None)。
+    符号显式保留, 不允许简单删符号后转浮点:
+      "-0/0.5" -> 边界 -0/-0.5 -> "-2:0", mid=-1(-0.25), 符号不反转
+      "+0/0.5" -> "0:2", mid=1(+0.25)
+      "-0.25"  -> "-1:-1", mid=-1
+      "2.5"    -> "10:10", mid=10
+    """
+    if v is None:
+        return None, None
+    s = str(v).strip()
+    if not s:
+        return None, None
+
+    sign = 1
+    if s.startswith("+"):
+        sign = 1
+        s = s[1:]
+    elif s.startswith("-"):
+        sign = -1
+        s = s[1:]
+
+    try:
+        if "/" in s:
+            lo, hi = s.split("/", 1)
+            qs = [round(float(x) * 4) for x in (lo, hi)]
+        else:
+            q = round(float(s) * 4)
+            qs = [q, q]
+    except (TypeError, ValueError):
+        return None, None
+
+    if sign < 0:
+        qs = [-q for q in qs]
+    qs.sort()
+    mid = (qs[0] + qs[1]) // 2
+    return "%d:%d" % (qs[0], qs[1]), mid
 
 
 def detect_side(option, home, away):
@@ -113,6 +156,11 @@ def normalize(record):
     if line is None:
         line = parse_line(record.line_raw)
 
+    # Phase 6(R1 修复): 四分之一球编码只来自新解析, 符号显式保留
+    lq, lq_mid = parse_line_quarters(record.line_raw)
+    if lq is None and line is not None:
+        lq = "%d:%d" % (round(line * 4), round(line * 4))
+
     # 显式状态(规则 7.4/34): 未知类型 -> UNMAPPED; 非法赔率/缺失必填 line -> INVALID
     status = MAPPED
     if mtype == "unknown":
@@ -136,8 +184,10 @@ def normalize(record):
         period=period,
         line_raw=record.line_raw,
         line=line,
+        line_quarters=lq,
         side=side,
         option=record.option,
         odds=record.odds,
+        odds_raw=getattr(record, "odds_raw", None),
         status=status,
     )

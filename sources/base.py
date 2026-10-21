@@ -24,3 +24,6 @@ class NormalizedRecord:
     normalizer_name: str = ""
     normalizer_version: str = ""
     config_hash: str = ""
+    # Phase 6: 原始赔率与四分之一球编码(规格 §5.2)
+    odds_raw: str = ""
+    line_quarters: str = ""

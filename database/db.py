@@ -417,12 +417,49 @@ def _migrate_v6(c):
                  WHERE rule_version IS NULL""")
 
 
+V7_TABLES = """
+CREATE TABLE IF NOT EXISTS main_selections(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id TEXT NOT NULL,
+    market_definition_id TEXT NOT NULL,
+    period TEXT,
+    selection_id TEXT NOT NULL,
+    policy_id TEXT NOT NULL,
+    policy_version TEXT,
+    selected_source_id TEXT,
+    selected_quote_ids TEXT,
+    candidate_quote_ids TEXT,
+    selection_reason_codes TEXT,
+    quality_status TEXT,
+    data_as_of_time INTEGER,
+    selected_at INTEGER NOT NULL,
+    UNIQUE(match_id, market_definition_id, period, policy_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_main_match
+ON main_selections(match_id, period);
+"""
+
+
+def _migrate_v7(c):
+    """V7(Phase 6): 盘口字段规范与主盘口选择器(规格 §5)。
+
+    - unified_snapshots 增 odds_raw(原始赔率保留)/line_quarters(四分之一球
+      编码, R1 修复, 只对新数据生效)
+    - main_selections: 主盘口选择结果(可解释的派生输出, 非原始字段)
+    """
+    c.executescript(V7_TABLES)
+    _add_column(c, "unified_snapshots", "odds_raw", "TEXT")
+    _add_column(c, "unified_snapshots", "line_quarters", "TEXT")
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
     4: _migrate_v4,
     5: _migrate_v5,
     6: _migrate_v6,
+    7: _migrate_v7,
 }
 
 

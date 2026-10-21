@@ -259,6 +259,8 @@ class SXBetAdapter(BaseAdapter):
                 line=float(line) if line is not None else None,
                 option=name or "",
                 odds=pct_to_decimal(top.get("percentageOdds")),
+                odds_raw=str(top.get("percentageOdds"))
+                if top.get("percentageOdds") is not None else None,
                 event_time=event_time,
                 server_time=None,
                 received_at=received_at,

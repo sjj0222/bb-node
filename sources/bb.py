@@ -301,6 +301,7 @@ class BBAdapter(BaseAdapter):
                         line=line,
                         option=op.get("na", ""),
                         odds=odds,
+                        odds_raw=str(op.get("od")) if op.get("od") is not None else None,
                         event_time=event_time,
                         server_time=None,
                         received_at=received_at,

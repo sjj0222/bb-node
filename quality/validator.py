@@ -11,6 +11,7 @@ import math
 STRUCTURE = "STRUCTURE"
 SEMANTIC = "SEMANTIC"
 TIME = "TIME"
+MARKET = "MARKET"    # Phase 6: 盘口质量(规格 §5.4)
 
 # 错误码
 MISSING_FIELD = "MISSING_FIELD"
@@ -19,12 +20,15 @@ ODDS_MISSING = "ODDS_MISSING"
 ODDS_OUT_OF_RANGE = "ODDS_OUT_OF_RANGE"
 LINE_INVALID = "LINE_INVALID"
 TIME_ORDER = "TIME_ORDER"
+MARKET_LINE_REQUIRED = "MARKET_LINE_REQUIRED"    # §5.4: 需要 line 的盘口无 line
 
 # 语义阈值(规格: 赔率取值合理; 过小/过大视为异常, 不伪造)
 ODDS_MIN = 1.01
 ODDS_MAX = 50.0
 # 源时间允许晚于抓取时间的容差(ms)
 TIME_TOLERANCE_MS = 10 * 60 * 1000
+
+from mapping.market import MTY, LINE_REQUIRED, parse_line_quarters
 
 
 def _is_num(v):
@@ -81,5 +85,18 @@ def validate(rec):
             errs.append((TIME, TIME_ORDER,
                          "server_time %s > received_at %s"
                          % (rec.server_time, rec.received_at)))
+
+    # ---- 市场层(§5.4): 需要 line 的盘口必须可解析 ----
+    canonical = MTY.get(str(rec.market_type))
+    if canonical in LINE_REQUIRED:
+        if rec.line is None and not rec.line_raw:
+            errs.append((MARKET, MARKET_LINE_REQUIRED,
+                         "%s requires a line" % canonical))
+        else:
+            lq, _ = parse_line_quarters(rec.line_raw)
+            if lq is None and rec.line is None:
+                errs.append((MARKET, MARKET_LINE_REQUIRED,
+                             "%s line unparseable: %r"
+                             % (canonical, rec.line_raw)))
 
     return errs

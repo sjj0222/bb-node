@@ -59,9 +59,10 @@ def save_unified(record, canonical_match_id=None, conn=None):
     (canonical_match_id,source,bookmaker,
      source_match_id,source_market_id,
      market_type,period,line_raw,line,side,
-     option,odds,event_time,server_time,
+     option,odds,odds_raw,line_quarters,
+     event_time,server_time,
      received_at,raw_ref,pipeline_version,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """,(
         canonical_match_id,
         record.source,
@@ -75,6 +76,8 @@ def save_unified(record, canonical_match_id=None, conn=None):
         record.side,
         record.option,
         record.odds,
+        getattr(record, "odds_raw", None),
+        getattr(record, "line_quarters", None),
         record.event_time,
         record.server_time,
         record.received_at,
