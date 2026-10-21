@@ -207,6 +207,7 @@ def collect_source(name, received_at=None):
               "pending": 0, "unified": 0}
     match_count = 0
 
+    conn = None
     try:
         received_at = received_at or int(time.time() * 1000)
         conn = connect()
@@ -250,6 +251,7 @@ def collect_source(name, received_at=None):
 
         conn.commit()
         conn.close()
+        conn = None
 
         row_count = sum(counts.values())
         _finish_run(run_id, match_count, row_count, True,
@@ -282,6 +284,19 @@ def collect_source(name, received_at=None):
         }
 
     except Exception as e:
+        # P2-9: 异常路径必须回滚并关闭连接——此前 try 内创建的 conn 在
+        # except 中既不 rollback 也不 close, monitor 300s 轮询源持续故障
+        # 时每轮泄漏一个连接+未提交事务, 长跑耗尽 fd / database is locked。
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = None
         _finish_run(run_id, match_count, 0, False,
                     redact(str(e)), meta=meta_total)
         error("COLLECT", redact(str(e))[:200])

@@ -19,8 +19,13 @@ def _payload_hash(payload):
 
 
 def emit(conn, *, source, event_type, entity_key, event_time=None,
-         payload=None, recorded_at=None, ingest_run_id=None, persist=True):
-    """记录一个事件, 返回是否为新事件(重复输入返回 False, 幂等)。"""
+         payload=None, recorded_at=None, ingest_run_id=None, persist=False):
+    """记录一个事件, 返回是否为新事件(重复输入返回 False, 幂等)。
+
+    P2-8: 默认不 commit——事件通常发生在调用方的共享事务内(批量写,
+    避免逐行 fsync); 由调用方统一提交。仅单事件独立事务的场景显式
+    传 persist=True。
+    """
     if event_time is None:
         event_time = int(time.time() * 1000)
     if recorded_at is None:
@@ -40,8 +45,12 @@ def emit(conn, *, source, event_type, entity_key, event_time=None,
 
 
 def iter_events(conn, consumer, *, start_ms=None, end_ms=None,
-                event_types=None, persist=True):
-    """按稳定顺序(事件时间, 记录时间, id)迭代并标记已消费(幂等)。"""
+                event_types=None, persist=False):
+    """按稳定顺序(事件时间, 记录时间, id)迭代并标记已消费(幂等)。
+
+    P2-8: 默认不逐行 commit; 消费标记与读取通常在同一事务, 由调用方
+    在迭代结束后统一提交。需要逐条持久化时显式传 persist=True。
+    """
     sql = ("SELECT * FROM events WHERE 1=1")
     args = []
     if start_ms is not None:

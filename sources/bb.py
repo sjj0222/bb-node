@@ -21,7 +21,7 @@ class BBAdapter(BaseAdapter):
 
     def __init__(self, url=None, app_version=None, os_type=None,
                  app_type=None, language_type=None, leagues=None,
-                 timeout=15):
+                 timeout=None):
         cfg = (env.get("sources.bb") or {})
         self.url = url or cfg.get("url") \
             or "https://api.infv1.com/v1/match/getList"
@@ -36,7 +36,10 @@ class BBAdapter(BaseAdapter):
             self.leagues = dict(cfg_leagues)  # 空 dict = 全量采集
         else:
             self.leagues = dict(TARGET_LEAGUES)
-        self.timeout = timeout
+        # P2-11: timeout 与 url/app_version 一样读 config(此前只吃形参
+        # 默认 15, config sources.bb.timeout 是纯装饰)
+        self.timeout = timeout if timeout is not None \
+            else cfg.get("timeout", 15)
         self.session = requests.Session()
         self._active_run_type = 3
 

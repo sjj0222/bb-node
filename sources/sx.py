@@ -58,7 +58,7 @@ class SXBetAdapter(BaseAdapter):
     NORMALIZER_VERSION = "sx-normalize-v1"
 
     def __init__(self, base_url=None, sport_id=None,
-                 market_types=None, timeout=20):
+                 market_types=None, timeout=None):
         cfg = (env.get("sources.sx") or {})
         self.base_url = (base_url or cfg.get("base_url")
                          or "https://api.sx.bet").rstrip("/")
@@ -66,7 +66,9 @@ class SXBetAdapter(BaseAdapter):
             cfg.get("sport_id") or 5)
         self.market_types = dict(
             market_types or cfg.get("market_types") or DEFAULT_MARKET_TYPES)
-        self.timeout = timeout
+        # P2-11: timeout 读 config(此前只吃形参默认 20)
+        self.timeout = timeout if timeout is not None \
+            else cfg.get("timeout", 20)
         self.session = requests.Session()
 
     # ---------- 契约(规格 §6.1) ----------
@@ -146,15 +148,28 @@ class SXBetAdapter(BaseAdapter):
                 raise
 
     def fetch_odds(self, market_hash):
-        r = self.session.get(
-            "%s/orderbook-v3/snapshot" % self.base_url,
-            params={"marketHash": market_hash},
-            timeout=self.timeout)
-        r.raise_for_status()
-        j = r.json()
-        if j.get("status") != "success":
-            raise RuntimeError("sx odds response not success")
-        return j.get("data") or {}
+        """单盘口快照。P2-10: 与 fetch_markets 对齐的退避重试。"""
+        policy = self.rate_limit_policy()
+        max_retries = int(policy.get("max_retries", 2))
+        from .contract import backoff_sleep
+        for n in range(max_retries + 1):
+            try:
+                r = self.session.get(
+                    "%s/orderbook-v3/snapshot" % self.base_url,
+                    params={"marketHash": market_hash},
+                    timeout=self.timeout)
+                r.raise_for_status()
+                j = r.json()
+                if j.get("status") != "success":
+                    raise RuntimeError("sx odds response not success")
+                return j.get("data") or {}
+            except Exception as e:
+                cls = classify_exception(e)
+                resp = getattr(e, "response", None)
+                if cls in ("RATE_LIMIT", "RETRYABLE") and n < max_retries:
+                    backoff_sleep(policy, n, response=resp)
+                    continue
+                raise
 
     # ---------- RAW ----------
     def save_raw(self, obj, raw_dir):
@@ -179,6 +194,9 @@ class SXBetAdapter(BaseAdapter):
             by_event.setdefault(eid, []).append(m)
 
         out = {}
+        failed = 0
+        # P2-10: 盘口请求间隔(毫秒), 防无间隔连打上百请求吃 429/被封
+        interval = float(env.get("sources.sx.request_interval_ms", 20) or 0) / 1000.0
         for eid, ms in by_event.items():
             picked = []
             seen = set()
@@ -196,7 +214,17 @@ class SXBetAdapter(BaseAdapter):
                     picked.append(m)
 
             for m in picked:
-                odds = self.fetch_odds(m["marketHash"])
+                if interval:
+                    time.sleep(interval)
+                try:
+                    odds = self.fetch_odds(m["marketHash"])
+                except Exception as e:
+                    # P2-10: 单盘口失败只跳过该盘口(对齐 bb partial 降级),
+                    # 不让整个 sx 源本轮归零
+                    failed += 1
+                    print("sx odds fail %s: %s" % (
+                        m.get("marketHash"), str(e)[:80]), flush=True)
+                    continue
                 bundle = {
                     "market": m,
                     "odds": odds,
@@ -206,9 +234,11 @@ class SXBetAdapter(BaseAdapter):
                     bundle, env.raw_dir(self.source))
                 out.setdefault(eid, []).append(bundle)
 
-        # Phase 2: 无分页语义, 恒为完整成功
+        # Phase 2: 无分页语义, 恒为完整成功; P2-10: 盘口级失败显式降级
         self.last_collect_meta = {
-            "pages": 1, "retries": 0, "partial": False, "error_code": None,
+            "pages": 1, "retries": 0,
+            "partial": failed > 0,
+            "error_code": "ODDS_PARTIAL" if failed > 0 else None,
         }
         return out
 
