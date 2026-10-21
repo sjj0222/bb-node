@@ -10,3 +10,4 @@ config/local/
 *.sqlite
 *.sqlite3
 config/node.json
+run/

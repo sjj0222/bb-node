@@ -1,7 +1,10 @@
-"""BB Node V0.2 统一 CLI(规则 50)。
+"""BB Node Phase 1 统一 CLI(规格 1.1/12.1/14.1/14.2)。
 
 命令:
-  pipeline run|status [--source bb sx] [--stage ...] [--incremental]
+  init
+  check [--json]
+  doctor [--json]
+  pipeline run|status [--source bb sx] [--stage ...] [--incremental] [--json]
   monitor start|stop|status|restart|once [--interval N]
   monitor add|remove|list <canonical_match_id>
   source list|status [name]
@@ -11,20 +14,135 @@
   replay run [--cutoff MS] [--source ...] [--match ...]
   backtest run [--group-by match|market|source|strategy|time|version]
   quality run
+
+退出码约定(Phase 1, 规格 12.1):
+  0 = 成功 / 检查全部通过
+  1 = 运行失败 / 检查存在 FAIL / 单实例锁被占用
+  2 = 用法错误(argparse 默认)
+
+单实例锁(规格 14.1/14.2):
+  pipeline run 与 monitor start/restart 获取同名锁, 被占用时退出码 1,
+  防止多进程重复执行采集/调度。
+
+--json: 对 init/check/doctor/pipeline status 输出结构化 JSON。
 """
 import sys
 import argparse
 
 
+def _out_json(obj):
+    import json
+    print(json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2))
+
+
+def _cmd_init(args):
+    """幂等初始化: 建数据/运行目录、建表/迁移; 不破坏已有数据。"""
+    import os
+    from core import env, checks
+    os.makedirs(env.data_dir(), exist_ok=True)
+    os.makedirs(env.run_dir(), exist_ok=True)
+    from database import db
+    db.init()
+    # 验证
+    items = checks.db_check() + [checks.disk_check()]
+    failed = [c for c in items if c["status"] == "FAIL"]
+    result = {
+        "init": "OK",
+        "db_path": env.db_path(),
+        "schema_version": env.schema_version(),
+        "checks": items,
+    }
+    if args.json:
+        _out_json(result)
+    else:
+        print("INIT OK db=%s schema_version=%s" % (env.db_path(), env.schema_version()))
+        for c in items:
+            print(" ", c["status"], c["name"], c["detail"])
+    sys.exit(1 if failed else 0)
+
+
+def _cmd_check(args):
+    """只读检查: 配置/目录/磁盘/数据库完整性/来源健康。"""
+    from core import checks
+    items = checks.run_checks()
+    failed = [c for c in items if c["status"] == "FAIL"]
+    if args.json:
+        _out_json({"checks": items, "result": "FAIL" if failed else "OK"})
+    else:
+        for c in items:
+            print(c["status"].ljust(6), c["name"].ljust(22), c["detail"])
+        print("CHECK:", "FAIL" if failed else "OK")
+    sys.exit(1 if failed else 0)
+
+
+def _cmd_doctor(args):
+    """全面诊断: 环境信息 + 全部检查(只读)。"""
+    from core import checks
+    env_info = checks.env_info()
+    items = checks.run_checks()
+    failed = [c for c in items if c["status"] == "FAIL"]
+    if args.json:
+        _out_json({"env": env_info, "checks": items, "result": "FAIL" if failed else "OK"})
+    else:
+        print("== ENV ==")
+        for k, v in env_info.items():
+            print(" ", k, "=", v)
+        print("== CHECKS ==")
+        for c in items:
+            print(c["status"].ljust(6), c["name"].ljust(22), c["detail"])
+        print("DOCTOR:", "FAIL" if failed else "OK")
+    sys.exit(1 if failed else 0)
+
+
+def _status_json():
+    import sqlite3
+    from core import env, status as st
+    con = sqlite3.connect("file:%s?mode=ro" % env.db_path(), uri=True, timeout=5)
+    try:
+        r = con.execute(
+            "select max(received_at),count(*) from unified_snapshots"
+        ).fetchone()
+    finally:
+        con.close()
+    latest, total = r
+    state = "NO_DATA"
+    age_s = None
+    if latest:
+        import time
+        age_s = round(time.time() - latest / 1000, 1)
+        state = "OK" if age_s <= env.stale_after_seconds() else "STALE"
+    return {
+        "unified": {"latest_ms": latest, "rows": total, "age_s": age_s,
+                    "state": state},
+        "stages": st.get_status(),
+    }
+
+
 def _cmd_pipeline(args):
-    from pipeline.orchestrator import run_pipeline, main as p_main
+    from core import lock
     if args.sub == "status":
-        from core.status import print_status
-        print_status()
+        if args.json:
+            _out_json(_status_json())
+        else:
+            from core.status import print_status
+            print_status()
         return
-    results = run_pipeline(sources=args.source, stages=args.stage,
-                           incremental=args.incremental)
-    print("PIPELINE:", "PASS" if results.get("PASS") else "FAIL")
+    h = lock.acquire("pipeline", timeout=0)
+    if h is None:
+        print("LOCK_BUSY pipeline: 另一个 pipeline run 正在执行", file=sys.stderr)
+        sys.exit(1)
+    try:
+        from pipeline.orchestrator import run_pipeline
+        results = run_pipeline(sources=args.source, stages=args.stage,
+                               incremental=args.incremental)
+    finally:
+        h.release()
+    ok = bool(results.get("PASS"))
+    if args.json:
+        _out_json(results)
+    else:
+        print("PIPELINE:", "PASS" if ok else "FAIL")
+    sys.exit(0 if ok else 1)
 
 
 def _cmd_monitor(args):
@@ -42,12 +160,19 @@ def _cmd_monitor(args):
                 print(w)
         return
     m = Monitor(interval_seconds=args.interval)
-    if args.sub == "start":
-        print(m.start())
-    elif args.sub == "stop":
+    if args.sub in ("start", "restart"):
+        from core import lock
+        h = lock.acquire("monitor", timeout=0)
+        if h is None:
+            print("LOCK_BUSY monitor: 另一个 monitor 正在运行", file=sys.stderr)
+            sys.exit(1)
+        try:
+            print(m.start() if args.sub == "start" else m.restart())
+        finally:
+            h.release()
+        return
+    if args.sub == "stop":
         print(m.stop())
-    elif args.sub == "restart":
-        print(m.restart())
     elif args.sub == "once":
         print("round ok:", m.run_once())
     else:
@@ -132,15 +257,31 @@ def _cmd_quality(args):
     print(dq())
 
 
+def _add_json(p):
+    p.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+
+
 def main():
-    ap = argparse.ArgumentParser(description="BB Node V0.2 CLI")
+    ap = argparse.ArgumentParser(description="BB Node Phase 1 CLI")
+    ap.add_argument("--json", action="store_true", default=False,
+                    help="对支持的命令输出结构化 JSON")
     sub = ap.add_subparsers(dest="cmd")
+
+    ip = sub.add_parser("init", help="幂等初始化(建目录/建表/迁移, 不破坏数据)")
+    _add_json(ip)
+
+    cp = sub.add_parser("check", help="只读检查: 配置/磁盘/数据库完整性/来源健康")
+    _add_json(cp)
+
+    dp = sub.add_parser("doctor", help="全面诊断: 环境信息 + 全部检查(只读)")
+    _add_json(dp)
 
     p = sub.add_parser("pipeline")
     p.add_argument("sub", choices=["run", "status"])
     p.add_argument("--source", nargs="+")
     p.add_argument("--stage", nargs="+")
     p.add_argument("--incremental", action="store_true")
+    _add_json(p)
 
     m = sub.add_parser("monitor")
     m.add_argument("sub", choices=["start", "stop", "status", "restart",
@@ -178,6 +319,9 @@ def main():
 
     args = ap.parse_args()
     handlers = {
+        "init": _cmd_init,
+        "check": _cmd_check,
+        "doctor": _cmd_doctor,
         "pipeline": _cmd_pipeline,
         "monitor": _cmd_monitor,
         "source": _cmd_source,

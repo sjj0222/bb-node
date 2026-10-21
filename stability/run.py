@@ -73,6 +73,14 @@ def run_once(monitor, run_id):
 
 def run(duration_hours=24, interval_seconds=None, state_file=STATE_FILE):
     from monitor.monitor import Monitor
+    from core import lock
+
+    # 单实例锁(规格 14.1/14.2): 同一节点只允许一个稳定性测试进程
+    lock_handle = lock.acquire("stability24h", timeout=0)
+    if lock_handle is None:
+        msg = "LOCK_BUSY stability24h: 已有稳定性测试运行, 拒绝重复启动"
+        log_event("ERROR", "MONITOR", "stability", msg, new_trace_id("stability"))
+        return {"status": "LOCK_BUSY", "message": msg}
 
     cfg = env.get("monitor") or {}
     interval = interval_seconds or cfg.get("interval_seconds", 300)
@@ -154,6 +162,7 @@ def run(duration_hours=24, interval_seconds=None, state_file=STATE_FILE):
     log_event("INFO", "MONITOR", "stability",
               "stability run done id=%s rounds=%s errors=%s status=%s"
               % (run_id, rounds, errors, final_status), run_id)
+    lock_handle.release()
     return state
 
 
