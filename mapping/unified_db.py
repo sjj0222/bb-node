@@ -94,6 +94,34 @@ def save_unified(record, canonical_match_id=None, conn=None):
         now
     ))
 
+    # Phase 8: 内容变化 -> 赔率/盘口线变化事件(§10.1, 幂等)
+    if content_hash:
+        try:
+            prev = c.execute("""
+                SELECT content_hash FROM unified_snapshots
+                WHERE source=? AND source_match_id=?
+                  AND COALESCE(period,'')=COALESCE(?,'')
+                  AND COALESCE(line,-999)=COALESCE(?,-999)
+                  AND id < last_insert_rowid()
+                ORDER BY received_at DESC, id DESC LIMIT 1
+            """, (record.source, record.source_match_id,
+                  getattr(record, "period", None),
+                  getattr(record, "line", None))).fetchone()
+            if prev and prev[0] and prev[0] != content_hash:
+                from event.engine import emit_quote_change
+                emit_quote_change(
+                    c, canonical_match_id=canonical_match_id,
+                    source=record.source,
+                    source_market_id=record.source_market_id,
+                    market_type=record.market_type,
+                    period=record.period, line=record.line,
+                    old_content_hash=prev[0],
+                    new_content_hash=content_hash,
+                    received_at=record.received_at)
+        except Exception:
+            # 事件为增强能力, 不得阻断统一快照主链路
+            pass
+
     if own:
         c.commit()
         c.close()

@@ -136,6 +136,15 @@ def approve(conn, review_id, operator="cli", note="", candidate_index=0):
     if old_cid and old_cid != new_cid:
         _invalidate_downstream(conn, old_cid)
 
+    # Phase 8: 映射批准事件(§10.1 事件来源之一)
+    from event.engine import emit
+    emit(conn, source=row["source"], event_type="mapping_approved",
+         entity_key="%s:%s" % (row["source"], row["source_match_id"]),
+         event_time=now, payload={"review_id": review_id,
+                                  "canonical_match_id": new_cid,
+                                  "old_canonical_match_id": old_cid},
+         persist=False)
+
     conn.execute("""
         UPDATE mapping_review_queue
         SET decision='approved', operator=?, note=?, decided_ms=?

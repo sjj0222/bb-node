@@ -34,7 +34,7 @@ def test_migrate_v4_tables_and_columns(db):
                 "records_duplicate", "error_code"):
         assert col in cols, col
     uv = con.execute("PRAGMA user_version").fetchone()[0]
-    assert uv == 8
+    assert uv == 9
 
 
 def test_migrate_v4_idempotent(db):
@@ -210,4 +210,4 @@ def test_finish_run_failure_keeps_meta(db):
 # ---------- 4. 配置 schema_version ----------
 
 def test_config_schema_version_is_6():
-    assert env.schema_version() == 8
+    assert env.schema_version() == 9

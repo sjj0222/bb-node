@@ -507,6 +507,131 @@ def _migrate_v8(c):
                  ON unified_snapshots(league_id, received_at)""")
 
 
+V9_TABLES = """
+CREATE TABLE IF NOT EXISTS events(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    entity_key TEXT NOT NULL,
+    event_time INTEGER NOT NULL,
+    recorded_at INTEGER NOT NULL,
+    payload TEXT,
+    payload_hash TEXT NOT NULL,
+    ingest_run_id TEXT,
+    UNIQUE(source, event_type, entity_key, event_time, payload_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_events_order
+ON events(event_time, recorded_at, id);
+
+CREATE TABLE IF NOT EXISTS event_consumers(
+    consumer TEXT NOT NULL,
+    event_id INTEGER NOT NULL,
+    consumed_at INTEGER DEFAULT 0,
+    UNIQUE(consumer, event_id)
+);
+
+CREATE TABLE IF NOT EXISTS feature_results(
+    feature_name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    match_id TEXT NOT NULL,
+    as_of_time INTEGER NOT NULL,
+    value TEXT,
+    error TEXT,
+    computed_at INTEGER NOT NULL,
+    UNIQUE(feature_name, version, match_id, as_of_time)
+);
+
+CREATE TABLE IF NOT EXISTS feature_errors(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature_name TEXT,
+    version TEXT,
+    match_id TEXT,
+    as_of_time INTEGER,
+    error TEXT,
+    computed_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS signal_results(
+    rule_id TEXT NOT NULL,
+    version TEXT NOT NULL,
+    match_id TEXT NOT NULL,
+    as_of_time INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    output TEXT,
+    reason TEXT,
+    computed_at INTEGER NOT NULL,
+    UNIQUE(rule_id, version, match_id, as_of_time)
+);
+
+CREATE TABLE IF NOT EXISTS rule_regressions(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT,
+    from_version TEXT,
+    to_version TEXT,
+    sample_id TEXT,
+    output_before TEXT,
+    output_after TEXT,
+    diff TEXT,
+    run_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS replay_runs(
+    run_id TEXT PRIMARY KEY,
+    name TEXT,
+    mode TEXT,
+    start_ms INTEGER,
+    end_ms INTEGER,
+    version TEXT,
+    code_version TEXT,
+    started_at INTEGER,
+    finished_at INTEGER,
+    status TEXT,
+    summary TEXT
+);
+
+CREATE TABLE IF NOT EXISTS replay_events(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT,
+    seq INTEGER,
+    event_id INTEGER,
+    event_type TEXT,
+    entity_key TEXT,
+    event_time INTEGER,
+    recorded_at INTEGER,
+    payload TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_replay_run
+ON replay_events(run_id, seq);
+
+CREATE TABLE IF NOT EXISTS backtest_runs(
+    run_id TEXT PRIMARY KEY,
+    rule_id TEXT,
+    version TEXT,
+    train_start INTEGER,
+    train_end INTEGER,
+    test_start INTEGER,
+    test_end INTEGER,
+    params TEXT,
+    seed TEXT,
+    summary TEXT,
+    status TEXT,
+    created_at INTEGER
+);
+"""
+
+
+def _migrate_v9(c):
+    """V9(Phase 8-10): 事件/特征/信号/回放/回测(规格 §10-11)。
+
+    - events/event_consumers: 事件引擎(发生时间/记录时间分离, 幂等)
+    - feature_results/feature_errors: 特征引擎(as_of 无泄漏, 版本化)
+    - signal_results/rule_regressions: 信号引擎(生命周期/规则变更回归)
+    - replay_runs/replay_events: 回放(隔离输出, 稳定排序)
+    - backtest_runs: 回测(严格时间切分, 可审计)
+    """
+    c.executescript(V9_TABLES)
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
@@ -515,6 +640,7 @@ MIGRATIONS = {
     6: _migrate_v6,
     7: _migrate_v7,
     8: _migrate_v8,
+    9: _migrate_v9,
 }
 
 
