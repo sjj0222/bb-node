@@ -348,11 +348,81 @@ def _migrate_v5(c):
     c.executescript(V5_TABLES)
 
 
+V6_TABLES = """
+CREATE TABLE IF NOT EXISTS mapping_review_queue(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    source_match_id TEXT NOT NULL,
+    home TEXT,
+    away TEXT,
+    event_time INTEGER,
+    candidates_json TEXT,
+    reason TEXT,
+    decision TEXT NOT NULL DEFAULT 'pending',
+    operator TEXT,
+    note TEXT,
+    created_ms INTEGER,
+    decided_ms INTEGER,
+    UNIQUE(source, source_match_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_pending
+ON mapping_review_queue(decision, created_ms);
+
+CREATE TABLE IF NOT EXISTS mapping_audit(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    source_match_id TEXT NOT NULL,
+    old_canonical_match_id TEXT,
+    new_canonical_match_id TEXT,
+    action TEXT NOT NULL,
+    rule_version TEXT,
+    operator TEXT,
+    note TEXT,
+    created_ms INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_source
+ON mapping_audit(source, source_match_id, created_ms);
+"""
+
+
+def _migrate_v6(c):
+    """V6(Phase 5): 映射审计/人工审批/下游失效标记(规格 §8.3/8.4)。
+
+    - mapping_review_queue: 人工确认队列(pending/approved/rejected/deferred)
+    - mapping_audit: 所有映射变更的可审计历史(R3 修复)
+    - match_mappings 增 evidence/rule_version/approval/valid_from/valid_to/
+      operator/note
+    - unified_snapshots 增 superseded: 映射变更后旧结果标记失效(不删历史)
+    """
+    c.executescript(V6_TABLES)
+    for col, decl in (
+        ("evidence", "TEXT"),
+        ("rule_version", "TEXT"),
+        ("approval", "TEXT DEFAULT 'auto'"),
+        ("valid_from", "INTEGER"),
+        ("valid_to", "INTEGER"),
+        ("operator", "TEXT"),
+        ("note", "TEXT"),
+    ):
+        _add_column(c, "match_mappings", col, decl)
+    _add_column(c, "unified_snapshots", "superseded", "INTEGER DEFAULT 0")
+    # 既有数据回填: 映射视为创建时生效
+    c.execute("""UPDATE match_mappings
+                 SET valid_from=COALESCE(valid_from, created_at)
+                 WHERE valid_from IS NULL""")
+    c.execute("""UPDATE match_mappings
+                 SET rule_version=COALESCE(rule_version, 'match-v1')
+                 WHERE rule_version IS NULL""")
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
     4: _migrate_v4,
     5: _migrate_v5,
+    6: _migrate_v6,
 }
 
 

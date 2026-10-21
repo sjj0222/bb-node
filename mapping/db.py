@@ -34,12 +34,20 @@ def save_mapping(r, conn=None):
     now = int(time.time() * 1000)
     own = conn is None
     c = conn or connect()
+    # Phase 5(R3): 变更前快照, 供审计与下游失效标记
+    prev = c.execute("""
+    SELECT canonical_match_id, valid_from FROM match_mappings
+    WHERE source=? AND source_match_id=?
+    """, (r["source"], r["source_match_id"])).fetchone()
+    prev_cid = prev[0] if prev else None
+    valid_from = (prev[1] if prev else None) or now
     c.execute("""
     INSERT INTO match_mappings
     (source,source_match_id,canonical_match_id,
      home,away,event_time,confidence,status,
-     created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+     evidence, rule_version, approval,
+     valid_from, created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?, 'auto', ?, ?, ?)
     ON CONFLICT(source,source_match_id)
     DO UPDATE SET
       canonical_match_id=excluded.canonical_match_id,
@@ -48,6 +56,8 @@ def save_mapping(r, conn=None):
       event_time=excluded.event_time,
       confidence=excluded.confidence,
       status=excluded.status,
+      evidence=excluded.evidence,
+      rule_version=excluded.rule_version,
       updated_at=excluded.updated_at
     """, (
         r["source"],
@@ -56,11 +66,29 @@ def save_mapping(r, conn=None):
         r.get("home"),
         r.get("away"),
         r.get("event_time"),
-        r.get("confidence",0),
-        r.get("status","unmatched"),
+        r.get("confidence", 0),
+        r.get("status", "unmatched"),
+        r.get("evidence"),
+        r.get("rule_version", "match-v1"),
+        valid_from,
         now,
         now
     ))
+    # Phase 5(R3): 每次自动变更留审计历史
+    new_cid = r.get("canonical_match_id")
+    if prev is None:
+        action = "auto_approve" if new_cid else "auto_unmap"
+    elif prev_cid != new_cid:
+        action = "auto_approve" if new_cid else "auto_unmap"
+    else:
+        action = None
+    if action:
+        from .audit import log_audit, _invalidate_downstream
+        log_audit(c, r["source"], r["source_match_id"], prev_cid, new_cid,
+                  action, rule_version=r.get("rule_version", "match-v1"))
+        # §8.4: 映射变更后旧 canonical 的下游结果标记失效
+        if prev_cid and prev_cid != new_cid:
+            _invalidate_downstream(c, prev_cid)
     if own:
         c.commit()
         c.close()

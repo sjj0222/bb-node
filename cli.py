@@ -28,6 +28,7 @@
 """
 import sys
 import argparse
+import json
 
 
 def _out_json(obj):
@@ -257,6 +258,83 @@ def _cmd_quality(args):
     print(dq())
 
 
+def _cmd_mapping(args):
+    """Phase 5: 映射人工审批 CLI(规格 §8.3, 可审计)。"""
+    from database.db import connect
+    from mapping import audit as ma
+    c = connect()
+    try:
+        if args.sub == "list":
+            rows = ma.list_queue(c, decision=args.decision or "pending")
+            if getattr(args, "json", False):
+                _out_json(rows)
+                return
+            if not rows:
+                print("review queue: (empty)")
+                return
+            for q in rows:
+                cands = json.loads(q.get("candidates_json") or "[]")
+                print("[%s] %s/%s %s vs %s @%s  reason=%s candidates=%s" % (
+                    q["id"], q["source"], q["source_match_id"],
+                    q.get("home"), q.get("away"), q.get("event_time"),
+                    q.get("reason"),
+                    " | ".join("%s(%.2f)" % (x["canonical_match_id"],
+                                             x["confidence"])
+                               for x in cands) or "(none)"))
+        elif args.sub == "approve":
+            out = ma.approve(c, args.id, operator=args.operator or "cli",
+                             note=args.note or "", candidate_index=args.index)
+            c.commit()
+            if getattr(args, "json", False):
+                _out_json(out)
+            else:
+                print("approved: %s -> %s (old=%s)" % (
+                    out["source_match_id"], out["canonical_match_id"],
+                    out["old_canonical_match_id"]))
+        elif args.sub == "reject":
+            out = ma.reject(c, args.id, operator=args.operator or "cli",
+                            note=args.note or "")
+            c.commit()
+            if getattr(args, "json", False):
+                _out_json(out)
+            else:
+                print("rejected: review %s" % args.id)
+        elif args.sub == "defer":
+            out = ma.defer(c, args.id, operator=args.operator or "cli",
+                           note=args.note or "")
+            c.commit()
+            if getattr(args, "json", False):
+                _out_json(out)
+            else:
+                print("deferred: review %s" % args.id)
+        elif args.sub == "revoke":
+            out = ma.revoke(c, args.source, args.source_match_id,
+                            operator=args.operator or "cli",
+                            note=args.note or "")
+            c.commit()
+            if getattr(args, "json", False):
+                _out_json(out)
+            else:
+                print("revoked: %s/%s" % (args.source, args.source_match_id))
+        elif args.sub == "audit":
+            rows = ma.audit_log(c, source=args.source,
+                                source_match_id=args.source_match_id)
+            if getattr(args, "json", False):
+                _out_json(rows)
+                return
+            if not rows:
+                print("mapping audit: (empty)")
+                return
+            for r in rows:
+                print("[%s] %s %s/%s %s -> %s by=%s note=%s" % (
+                    r["id"], r["action"], r["source"],
+                    r["source_match_id"], r["old_canonical_match_id"],
+                    r["new_canonical_match_id"], r["operator"],
+                    r.get("note") or ""))
+    finally:
+        c.close()
+
+
 def _add_json(p):
     p.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
 
@@ -317,6 +395,20 @@ def main():
 
     sub.add_parser("quality").add_argument("sub", choices=["run"], default="run")
 
+    mp = sub.add_parser("mapping", help="Phase 5: 映射人工审批与审计(规格 §8.3)")
+    mp.add_argument("sub", choices=["list", "approve", "reject", "defer",
+                                    "revoke", "audit"])
+    mp.add_argument("id", type=int, nargs="?",
+                    help="review id (approve/reject/defer)")
+    mp.add_argument("--decision", default=None, help="list 过滤: pending 等")
+    mp.add_argument("--index", type=int, default=0,
+                    help="approve 选定候选下标(默认 0)")
+    mp.add_argument("--source")
+    mp.add_argument("--source-match-id")
+    mp.add_argument("--operator", default="cli")
+    mp.add_argument("--note", default=None)
+    _add_json(mp)
+
     args = ap.parse_args()
     handlers = {
         "init": _cmd_init,
@@ -330,6 +422,7 @@ def main():
         "replay": _cmd_replay,
         "backtest": _cmd_backtest,
         "quality": _cmd_quality,
+        "mapping": _cmd_mapping,
     }
     if args.cmd not in handlers:
         ap.print_help()
