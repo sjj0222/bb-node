@@ -1,10 +1,6 @@
 import sqlite3, os, time, hashlib, json
 from core import env
 
-DB = env.db_path()
-
-os.makedirs(os.path.dirname(DB), exist_ok=True)
-
 # schema 版本: 新库直接创建当前版本, 旧库通过 MIGRATIONS 幂等升级。
 # 单一权威来源: 必须与下方 MIGRATIONS 的最高键一致; 新增迁移时同步此
 # 常量(不要从 config 读取——配置缺失时不得静默降级建出缺列库, P0-1)。
@@ -42,9 +38,8 @@ def _verify_schema(c):
 
 
 def connect(db=None):
-    dbfile = db or DB
-    if db:
-        os.makedirs(os.path.dirname(dbfile) or ".", exist_ok=True)
+    dbfile = db or env.db_path()
+    os.makedirs(os.path.dirname(dbfile) or ".", exist_ok=True)
     c = sqlite3.connect(dbfile)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
@@ -1092,7 +1087,7 @@ def data_hash(row):
 
 if __name__ == "__main__":
     init()
-    print("DB OK:", DB)
+    print("DB OK:", env.db_path())
     c = connect()
     print("schema_version:", c.execute("PRAGMA user_version").fetchone()[0])
     c.close()

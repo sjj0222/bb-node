@@ -14,7 +14,7 @@ from quality.validator import validate
 from quality.errors import ledger_quality_error
 from mapping.service import auto_map
 from mapping.market_service import map_and_save
-from mapping.unified_service import unify
+from mapping.unified_service import unify_market
 from mapping.status import MAPPED, UNMAPPED, INVALID, PENDING
 
 VERSION = env.pipeline_version()
@@ -154,7 +154,8 @@ def _process_records(recs, counts, conn, source=None, run_id=None):
 
         if mkt.status == MAPPED:
             counts["mapped"] += 1
-            unify(rec, cid, conn=conn)
+            # P3-18: 复用 map_and_save 已归一化的 market, 不再二次 normalize
+            unify_market(rec, mkt, canonical_match_id=cid, conn=conn)
             counts["unified"] += 1
         elif mkt.status == UNMAPPED:
             counts["unmapped"] += 1
@@ -203,8 +204,7 @@ def collect_source(name, received_at=None):
     run_id = _new_run(name)
     log_id = start("COLLECT", name)
     t0 = __import__("time").time()
-    counts = {"mapped": 0, "unmapped": 0, "invalid": 0,
-              "pending": 0, "unified": 0}
+    counts = {"mapped": 0, "unmapped": 0, "invalid": 0, "unified": 0}
     match_count = 0
 
     conn = None
@@ -253,7 +253,11 @@ def collect_source(name, received_at=None):
         conn.close()
         conn = None
 
-        row_count = sum(counts.values())
+        # P3-15: row_count 只统计实际处理的记录数(mapped+unmapped+invalid),
+        # 此前 sum(counts.values()) 把 mapped 与 unified 重复计数,
+        # collection_runs.row_count 系统性虚高。
+        row_count = (counts["mapped"] + counts["unmapped"]
+                     + counts["invalid"])
         _finish_run(run_id, match_count, row_count, True,
                     meta=meta_total)
         finish(log_id, "OK", match_count, counts["unified"],

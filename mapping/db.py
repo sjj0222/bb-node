@@ -1,34 +1,10 @@
 import time
 from database.db import connect
 
-def init_mapping():
-    c = connect()
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS match_mappings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        source TEXT NOT NULL,
-        source_match_id TEXT NOT NULL,
-        canonical_match_id TEXT,
-        home TEXT,
-        away TEXT,
-        event_time INTEGER,
-        confidence REAL NOT NULL DEFAULT 0,
-        status TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        UNIQUE(source, source_match_id)
-    )
-    """)
-    c.execute("""
-    CREATE INDEX IF NOT EXISTS idx_mm_canonical
-    ON match_mappings(canonical_match_id)
-    """)
-    c.execute("""
-    CREATE INDEX IF NOT EXISTS idx_mm_event
-    ON match_mappings(event_time)
-    """)
-    c.commit()
-    c.close()
+def init_mapping(db=None):
+    """委托权威建表(db.init): 不再自带旧结构 DDL(P3-19)。"""
+    from database.db import init as _db_init
+    _db_init(db)
 
 def save_mapping(r, conn=None):
     now = int(time.time() * 1000)

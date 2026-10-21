@@ -173,7 +173,8 @@ def pipeline_check():
     状态枚举单一来源 = core/status.py 常量(实际写入值是 OK/RUNNING/
     ERROR, 不是 success/running——P3-12)。
     """
-    from core.status import OK, RUNNING, ERROR, NO_RUN
+    from core.status import OK, RUNNING, NO_RUN
+    FAIL = "FAIL"
     try:
         con = _db_ro_connect(env.db_path())
         try:
@@ -185,8 +186,9 @@ def pipeline_check():
                 return [{"name": "pipeline_last", "status": "NOT_RUN",
                          "detail": "无 pipeline 记录"}]
             run_id, stage, status, started, finished, error = row
+            # checks 枚举: OK/WARN/FAIL/NOT_RUN; ERROR 与未知一律 FAIL
             st = (OK if status == OK else RUNNING if status == RUNNING
-                  else ERROR if status == ERROR else FAIL)
+                  else FAIL)
             return [{"name": "pipeline_last", "status": st,
                      "detail": "run_id=%s stage=%s status=%s error=%s" % (
                          run_id, stage, status, error)}]

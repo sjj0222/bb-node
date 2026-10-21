@@ -9,8 +9,6 @@ import time
 import sqlite3
 from core import env
 
-DB = env.db_path()
-
 UP = "UP"
 DOWN = "DOWN"
 STALE = "STALE"
@@ -27,7 +25,7 @@ def record(source, *, status=UP, latency_ms=None, records=0,
            stale_after=None):
     """记录一次 Source 采集尝试。"""
     now = int(time.time() * 1000)
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(env.db_path())
     c.row_factory = sqlite3.Row
     c.execute("""
     INSERT INTO source_health(
@@ -59,7 +57,7 @@ def record(source, *, status=UP, latency_ms=None, records=0,
 
 
 def get(source):
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(env.db_path())
     c.row_factory = sqlite3.Row
     r = c.execute(
         "select * from source_health where source=?", (source,)).fetchone()
@@ -70,7 +68,7 @@ def get(source):
 
 
 def list_all():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(env.db_path())
     c.row_factory = sqlite3.Row
     rows = c.execute(
         "select * from source_health order by source").fetchall()

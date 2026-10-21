@@ -1,53 +1,14 @@
 import time
 from database.db import connect
 
-def init_unified():
-    c=connect()
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS unified_snapshots (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        canonical_match_id TEXT,
-        source TEXT NOT NULL,
-        bookmaker TEXT,
-        source_match_id TEXT NOT NULL,
-        source_market_id TEXT NOT NULL,
-        market_type TEXT NOT NULL,
-        period TEXT,
-        line_raw TEXT,
-        line REAL,
-        side TEXT,
-        option TEXT NOT NULL,
-        odds REAL,
-        event_time INTEGER,
-        server_time INTEGER,
-        received_at INTEGER NOT NULL,
-        raw_ref TEXT,
-        created_at INTEGER NOT NULL,
-        UNIQUE(
-          source,
-          source_match_id,
-          source_market_id,
-          option,
-          received_at
-        )
-    )
-    """)
-    c.execute("""
-    CREATE INDEX IF NOT EXISTS idx_unified_match
-    ON unified_snapshots(canonical_match_id,received_at)
-    """)
-    c.execute("""
-    CREATE INDEX IF NOT EXISTS idx_unified_market
-    ON unified_snapshots(
-      canonical_match_id,market_type,period,line,received_at
-    )
-    """)
-    c.execute("""
-    CREATE INDEX IF NOT EXISTS idx_unified_source
-    ON unified_snapshots(source,source_match_id,received_at)
-    """)
-    c.commit()
-    c.close()
+def init_unified(db=None):
+    """委托权威建表(db.init): 不再自带旧结构 DDL(P3-19)。
+
+    此前这里的老结构缺 odds_raw/line_quarters/content_hash 等列,
+    单独调用后写入必然失败(实测 no column named odds_raw)。
+    """
+    from database.db import init as _db_init
+    _db_init(db)
 
 def save_unified(record, canonical_match_id=None, conn=None):
     now = int(time.time() * 1000)

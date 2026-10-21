@@ -105,7 +105,9 @@ def backoff_sleep(policy, attempt, response=None):
     base = float(policy.get("backoff_base", 2.0))
     cap = float(policy.get("backoff_max", 20.0))
     lo, hi = policy.get("jitter", [0.5, 1.5])
-    wait = min(base * (2 ** max(0, attempt)), cap) * random.uniform(lo, hi)
+    # P3-16: 抖动必须乘在 cap 之前——此前 min(base*2^n, cap)*jitter
+    # 让退避突破上限(backoff_max=20 实际最长睡 30s)
+    wait = min(base * (2 ** max(0, attempt)) * random.uniform(lo, hi), cap)
     time.sleep(wait)
 
 

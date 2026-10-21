@@ -1,37 +1,14 @@
 import time
 from database.db import connect
 
-def init_market_mapping():
-    c=connect()
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS market_mappings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        source TEXT NOT NULL,
-        canonical_match_id TEXT,
-        source_match_id TEXT NOT NULL,
-        source_market_id TEXT NOT NULL,
-        market_type TEXT NOT NULL,
-        period TEXT,
-        line_raw TEXT,
-        line REAL,
-        side TEXT,
-        option TEXT NOT NULL,
-        odds REAL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        UNIQUE(source,source_match_id,source_market_id,option)
-    )
-    """)
-    c.execute("""
-    CREATE INDEX IF NOT EXISTS idx_market_canonical
-    ON market_mappings(canonical_match_id)
-    """)
-    c.execute("""
-    CREATE INDEX IF NOT EXISTS idx_market_type
-    ON market_mappings(market_type,period)
-    """)
-    c.commit()
-    c.close()
+def init_market_mapping(db=None):
+    """委托权威建表(db.init): 不再自带旧结构 DDL(P3-19)。
+
+    此前这里自带一份老结构 CREATE TABLE IF NOT EXISTS, 一旦先跑,
+    db.init() 建表变 no-op, 只能靠迁移补列; 同表 DDL 散三处互不同步。
+    """
+    from database.db import init as _db_init
+    _db_init(db)
 
 def save_market(m, canonical_match_id=None, source_match_id=None, conn=None):
     now=int(time.time()*1000)

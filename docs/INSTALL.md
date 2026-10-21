@@ -24,8 +24,15 @@ python3 cli.py source status                       # 来源健康
 
 前置要求:
 - Python >= 3.10(不假定系统 Python 固定; Termux: `pkg install python`)
+- 运行时第三方依赖: `requests`(适配器 HTTP 客户端)。
+  Termux: `pip install requests`(或 `pkg install python-requests`);
+  其余能力均为标准库。
 - 数据/日志/运行目录可配置: 环境变量 `BB_NODE_HOME` / `BB_NODE_DB` /
   `BB_NODE_LOG`(未设置时用仓库内默认)。
+- **配置必须可解析**: 若把数据目录挪出仓库(`BB_NODE_HOME=/tmp/xxx`),
+  必须同时显式设置 `BB_NODE_CONFIG` 指向完整 config/config.json;
+  配置缺失/损坏时 CLI 会明确报错退出(不再静默降级), 可先跑
+  `cli.py check` 看 config_parse 项。
 - 启动前检查目录权限与剩余空间: `cli.py check` 内置磁盘检查。
 
 ## 2. 升级(旧库安全升级)

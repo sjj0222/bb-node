@@ -2,8 +2,6 @@ import sqlite3
 import time
 from core import env
 
-DB = env.db_path()
-
 # 显式状态枚举(规则 19): 异常必须显式, 禁止用 None/''/0/UNKNOWN 混用
 OK = "OK"
 UNMAPPED = "UNMAPPED"
@@ -41,7 +39,7 @@ def health_of(start_time):
 
 
 def get_status():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(env.db_path())
     c.row_factory = sqlite3.Row
 
     out = []
@@ -105,7 +103,7 @@ def get_status():
 
 
 def print_status():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(env.db_path())
 
     r = c.execute(
         "select max(received_at),count(*) from unified_snapshots"

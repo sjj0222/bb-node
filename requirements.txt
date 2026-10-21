@@ -1,10 +1,10 @@
-# bb-node 运行时依赖(Phase 13 发布候选 0.3.0-rc1)
+# bb-node 运行时依赖(P3-14 修正: requests 是真实运行时依赖)
 
-运行时: 纯 Python 标准库(sqlite3/json/hashlib/urllib/re/time),
-无第三方运行时依赖; 目标 Python >= 3.10(在 3.12 上全量验证)。
+运行时: Python >= 3.10(在 3.12 上全量验证);
+  requests>=2.28   # 适配器 HTTP 客户端(sources/bb.py、sources/sx.py)
+其余能力为标准库(sqlite3/json/hashlib/re/time/uuid)。
 
 开发/测试:
   pytest>=7          # tests/ 全量回归
-  (可选) requests     # 仅当 adapter 需要更复杂 HTTP 时, 当前未使用
 
-安装: 见 docs/INSTALL.md
+安装: 见 docs/INSTALL.md(Termux: pip install requests 或 pkg install python-requests)
