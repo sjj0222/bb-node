@@ -68,11 +68,15 @@ def test_sx_pct_to_decimal_base20():
     assert abs(pct_to_decimal("46000000000000000000") - 2.1739) < 0.01
 
 
-def test_sx_pct_fallback_lower_base():
-    """主基准不适用时回退其他基准。"""
-    # 1e18 基准: 4.6e17 => prob 0.46
+def test_sx_pct_large_underdog_no_fallback():
+    """P1-5: 大冷门按单一基准 1e20 换算, 不做 1e18 猜测回退。
+
+    4.6e17 = prob 0.0046 = 赔率 ~217.4; 旧启发式在 1e18 基准下
+    错算成 0.46 -> 2.17(看似合理实则全错)。5e17 = prob 0.005 = 200。
+    """
     v = pct_to_decimal("460000000000000000")
-    assert v is not None and 1.5 < v < 3
+    assert v is not None and 200 < v < 230
+    assert abs(pct_to_decimal("500000000000000000") - 200.0) < 0.01
 
 
 def test_sx_pct_invalid():

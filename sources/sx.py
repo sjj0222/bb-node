@@ -10,7 +10,7 @@
   3  -> asian_handicap (让球)
   52 -> 1x2     (胜负, 不含平局)
 
-赔率格式: percentageOdds 为 1e18 基准的隐含概率, decimal = 1e18 / percentageOdds
+赔率格式: percentageOdds 为 1e20 基准的隐含概率, decimal = 1e20 / percentageOdds
 """
 import json
 import os
@@ -32,9 +32,11 @@ DEFAULT_MARKET_TYPES = {
 def pct_to_decimal(pct):
     """SX percentageOdds -> decimal odds。
 
-    percentageOdds = 隐含概率 * base。真实数据 base=1e20
-    (4.6e19 / 1e20 = 0.46)。主基准命中但概率异常小(赔率>100)时,
-    回退 1e18 / 1e12 以兼容 decimals 变化。
+    percentageOdds = 隐含概率 * 1e20(单一权威基准, 与模块文档一致)。
+    概率在 (0,1) 即直接换算, 不做 1e18/1e12 猜测性回退——真实大冷门
+    如 prob=0.005(赔率 200) 在低基准下会被错算成 2.0, 看似合理实则
+    全错(P1-5)。概率过小(赔率 > 1e6)视为数据异常返回 None, 交给
+    质量层处理。
     """
     try:
         v = int(pct)
@@ -44,13 +46,8 @@ def pct_to_decimal(pct):
         return None
 
     prob = v / 10 ** 20
-    if 0 < prob < 1 and prob >= 0.01:
-        return round(1 / prob, 4)
-
-    for base in (10 ** 18, 10 ** 12):
-        prob = v / base
-        if 0 < prob < 1:
-            return round(1 / prob, 4)
+    if 0 < prob < 1:
+        return round(1 / prob, 4) if prob >= 1e-6 else None
     return None
 
 

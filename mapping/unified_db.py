@@ -128,8 +128,13 @@ def save_unified(record, canonical_match_id=None, conn=None):
 
 
 def _content_hash(record, canonical_match_id):
+    """内容哈希: 仅内容字段(变更检测/幂等, §9.2)。
+
+    严禁混入 received_at 等每轮必变字段——否则"赔率不变也每轮报变化",
+    events 被纯噪声灌满(P1-3)。
+    """
     import hashlib
-    key = "%s|%s|%s|%s|%s|%s|%s|%s|%s" % (
+    key = "%s|%s|%s|%s|%s|%s|%s|%s" % (
         canonical_match_id or "",
         getattr(record, "source", ""),
         getattr(record, "source_market_id", ""),
@@ -138,7 +143,6 @@ def _content_hash(record, canonical_match_id):
         getattr(record, "line", ""),
         getattr(record, "option", ""),
         getattr(record, "odds", ""),
-        getattr(record, "received_at", ""),
     )
     return hashlib.sha256(key.encode()).hexdigest()
 

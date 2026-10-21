@@ -175,7 +175,9 @@ class BBAdapter(BaseAdapter):
                     continue
                 print("bb %s(第%s次) %s" % (
                     cls, n + 1, str(e)[:80]), flush=True)
-                time.sleep(1)
+                # P1-6: 不可重试错误(AUTH/协议变化等)立即失败返回,
+                # 不再 sleep 后空转重试满次数(实测 401 仍发 4 次请求)。
+                return None, n + 1
         return None, max_retries + 1
 
     # ---------- 采集 ----------
@@ -278,7 +280,11 @@ class BBAdapter(BaseAdapter):
                     raw_line = op.get("li", mk_line)
 
                     try:
-                        line = float(mk_line) if mk_line is not None else None
+                        # P1-4: line 与 line_raw 必须同源(选项级 li, 缺失
+                        # 回退盘口级)。此前 line 用盘口级 mk_line 而 line_raw
+                        # 用选项级 op.li, 同一条记录两值矛盾, 四分之一球盘
+                        # 会被归到错误线上。
+                        line = float(raw_line) if raw_line is not None else None
                     except (TypeError, ValueError):
                         line = None
 
