@@ -20,3 +20,7 @@ class NormalizedRecord:
     server_time: Optional[int]
     received_at: int
     raw_ref: Optional[str] = None
+    # Phase 4: Normalizer 版本化与证据(规格 §7.1/7.3)
+    normalizer_name: str = ""
+    normalizer_version: str = ""
+    config_hash: str = ""

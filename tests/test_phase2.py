@@ -26,14 +26,15 @@ def test_migrate_v4_tables_and_columns(db):
     con = db
     tables = {r[0] for r in con.execute(
         "select name from sqlite_master where type='table'")}
-    for t in ("raw_records", "raw_observations", "unmapped_records"):
+    for t in ("raw_records", "raw_observations", "unmapped_records",
+              "quality_errors"):
         assert t in tables, t
     cols = [r[1] for r in con.execute("PRAGMA table_info(collection_runs)")]
     for col in ("run_type", "pages", "retries", "partial",
                 "records_duplicate", "error_code"):
         assert col in cols, col
     uv = con.execute("PRAGMA user_version").fetchone()[0]
-    assert uv == 4
+    assert uv == 5
 
 
 def test_migrate_v4_idempotent(db):
@@ -208,5 +209,5 @@ def test_finish_run_failure_keeps_meta(db):
 
 # ---------- 4. 配置 schema_version ----------
 
-def test_config_schema_version_is_4():
-    assert env.schema_version() == 4
+def test_config_schema_version_is_5():
+    assert env.schema_version() == 5

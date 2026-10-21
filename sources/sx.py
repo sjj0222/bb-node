@@ -57,6 +57,8 @@ def pct_to_decimal(pct):
 class SXBetAdapter(BaseAdapter):
     source = "sx"
     bookmaker = None
+    # Phase 4: Normalizer 版本化(规格 §7.1)
+    NORMALIZER_VERSION = "sx-normalize-v1"
 
     def __init__(self, base_url=None, sport_id=None,
                  market_types=None, timeout=20):
@@ -261,5 +263,8 @@ class SXBetAdapter(BaseAdapter):
                 server_time=None,
                 received_at=received_at,
                 raw_ref=raw_ref or bundle.get("raw_ref"),
+                normalizer_name=self.source,
+                normalizer_version=self.NORMALIZER_VERSION,
+                config_hash=env.config_hash(),
             ))
         return recs

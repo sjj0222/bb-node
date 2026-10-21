@@ -316,10 +316,43 @@ def _migrate_v4(c):
         _add_column(c, "collection_runs", col, decl)
 
 
+V5_TABLES = """
+CREATE TABLE IF NOT EXISTS quality_errors(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    raw_ref TEXT,
+    normalized_json TEXT,
+    layer TEXT NOT NULL,
+    code TEXT NOT NULL,
+    message TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    retried_count INTEGER NOT NULL DEFAULT 0,
+    ingest_run_id INTEGER,
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    UNIQUE(source, raw_ref, code, layer)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quality_source ON quality_errors(source);
+CREATE INDEX IF NOT EXISTS idx_quality_raw ON quality_errors(raw_ref);
+CREATE INDEX IF NOT EXISTS idx_quality_status ON quality_errors(status);
+"""
+
+
+def _migrate_v5(c):
+    """V5(Phase 4): 校验错误队列/拒绝表(规格 §7.2)。
+
+    - quality_errors: 结构/语义/时间校验失败的记录, 不静默丢弃,
+      保留 raw_ref 与 normalized_json 以便从 RAW 重放。
+    """
+    c.executescript(V5_TABLES)
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
     4: _migrate_v4,
+    5: _migrate_v5,
 }
 
 

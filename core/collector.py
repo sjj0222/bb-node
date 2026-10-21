@@ -10,6 +10,8 @@ from database.db import connect, init, data_hash
 from core.log import start, finish, error
 from sources.registry import get_adapter, enabled_sources
 from sources.contract import redact, classify_exception
+from quality.validator import validate
+from quality.errors import ledger_quality_error
 from mapping.service import auto_map
 from mapping.market_service import map_and_save
 from mapping.unified_service import unify
@@ -124,6 +126,14 @@ def _process_records(recs, counts, conn, source=None, run_id=None):
     未映射/无效记录落 unmapped_records(Phase 2, R4)。
     """
     for rec in recs:
+        # Phase 4(规格 §7.2): 校验失败不静默丢弃, 落拒绝表并保留 RAW 可重放
+        verrs = validate(rec)
+        if verrs:
+            counts["invalid"] += 1
+            for layer, code, msg in verrs:
+                ledger_quality_error(conn, rec, layer, code, msg,
+                                     run_id=run_id)
+            continue
         src = source or rec.source
         mm = auto_map(rec, rec, conn=conn)
         cid = mm.get("canonical_match_id")

@@ -5,7 +5,7 @@
   },
   "database": {
     "path": "data/bb.db",
-    "schema_version": 4
+    "schema_version": 5
   },
   "stale_after_seconds": 300,
   "engines": {

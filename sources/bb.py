@@ -16,6 +16,8 @@ TARGET_LEAGUES = {
 class BBAdapter(BaseAdapter):
     source = "bb"
     bookmaker = None
+    # Phase 4: Normalizer 版本化(规格 §7.1)
+    NORMALIZER_VERSION = "bb-normalize-v1"
 
     def __init__(self, url=None, app_version=None, os_type=None,
                  app_type=None, language_type=None, leagues=None,
@@ -263,6 +265,7 @@ class BBAdapter(BaseAdapter):
         except (TypeError, ValueError):
             event_time = None
 
+        cfg_hash = env.config_hash()
         for mg in match.get("mg") or []:
             mty = str(mg.get("mty", ""))
             pe = mg.get("pe")
@@ -302,6 +305,9 @@ class BBAdapter(BaseAdapter):
                         server_time=None,
                         received_at=received_at,
                         raw_ref=raw_ref,
+                        normalizer_name=self.source,
+                        normalizer_version=self.NORMALIZER_VERSION,
+                        config_hash=cfg_hash,
                     ))
 
         return out
