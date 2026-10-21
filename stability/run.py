@@ -37,6 +37,33 @@ def _mem_mb():
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 
+def _final_status(rounds, errors, recoveries):
+    """稳定性门槛(R8 修复): 显式门限 + 可审计原因码。
+
+    PASS 条件(满足其一):
+      A. errors == 0
+      B. rounds >= MIN_ROUNDS 且 errors/rounds <= MAX_ERROR_RATE 且
+         recoveries/errors >= MIN_RECOVERY_RATE
+    其余为 ERROR。门限参数集中在下方常量, 便于审计调整。
+    """
+    MIN_ROUNDS = 4
+    MAX_ERROR_RATE = 0.25
+    MIN_RECOVERY_RATE = 0.5
+    if errors == 0:
+        return "PASS", "clean: errors=0"
+    if rounds < MIN_ROUNDS:
+        return "ERROR", "too_few_rounds:%d<%d" % (rounds, MIN_ROUNDS)
+    err_rate = errors / float(rounds)
+    if err_rate > MAX_ERROR_RATE:
+        return "ERROR", "error_rate:%.2f>%.2f" % (err_rate, MAX_ERROR_RATE)
+    rec_rate = recoveries / float(errors)
+    if rec_rate < MIN_RECOVERY_RATE:
+        return "ERROR", "recovery_rate:%.2f<%.2f" % (rec_rate,
+                                                     MIN_RECOVERY_RATE)
+    return "PASS", "within_gate:err_rate=%.2f rec_rate=%.2f" % (
+        err_rate, rec_rate)
+
+
 def _dup_rate():
     try:
         c = connect()
@@ -143,18 +170,25 @@ def run(duration_hours=24, interval_seconds=None, state_file=STATE_FILE):
 
         time.sleep(interval)
 
-    final_status = "PASS" if errors == 0 or recoveries > 0 else "ERROR"
+    # 终态判定(R8 修复, Phase 12): 显式门限, 不再"有恢复即 PASS"
+    #   - 无错误 -> PASS
+    #   - 有错误: 要求轮次足够、错误率 <= 25%、恢复成功率 >= 50% 才 PASS
+    #     否则 ERROR; 原因码留痕可审计
+    final_status, status_reason = _final_status(
+        rounds, errors, recoveries)
     c = connect()
     c.execute("""update stability_runs set
         ended_at=?,status=?,rounds=?,errors=?,recoveries=?,
-        mem_mb_peak=?,db_bytes_peak=?,wal_bytes_peak=?,dup_rate=? where run_id=?""",
+        mem_mb_peak=?,db_bytes_peak=?,wal_bytes_peak=?,dup_rate=?,
+        status_reason=? where run_id=?""",
         (int(time.time()) * 1000, final_status, rounds, errors, recoveries,
          peaks["mem_mb"], peaks["db_bytes"], peaks["wal_bytes"],
-         _dup_rate(), run_id))
+         _dup_rate(), status_reason, run_id))
     c.commit()
     c.close()
 
     state["status"] = final_status
+    state["status_reason"] = status_reason
     state["ended_at"] = int(time.time())
     state["peaks"] = peaks
     with open(state_file, "w") as f:

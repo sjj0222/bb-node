@@ -179,8 +179,8 @@ def test_migrate_v7(db):
     us_cols = [r[1] for r in db.execute(
         "PRAGMA table_info(unified_snapshots)")]
     assert "odds_raw" in us_cols and "line_quarters" in us_cols
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 11
 
 
 def test_config_schema_version_is_7():
-    assert env.schema_version() == 10
+    assert env.schema_version() == 11

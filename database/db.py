@@ -651,6 +651,14 @@ def _migrate_v10(c):
     c.executescript(V10_TABLES)
 
 
+def _migrate_v11(c):
+    """V11(Phase 12): 稳定性终态原因留痕(R8 修复)。
+
+    - stability_runs 增 status_reason: 终态判定理由可审计
+    """
+    _add_column(c, "stability_runs", "status_reason", "TEXT")
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
@@ -661,6 +669,7 @@ MIGRATIONS = {
     8: _migrate_v8,
     9: _migrate_v9,
     10: _migrate_v10,
+    11: _migrate_v11,
 }
 
 

@@ -264,8 +264,8 @@ def test_migrate_v9(db):
               "feature_errors", "signal_results", "rule_regressions",
               "replay_runs", "replay_events", "backtest_runs"):
         assert t in tables, t
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 11
 
 
 def test_config_schema_version_is_9():
-    assert env.schema_version() == 10
+    assert env.schema_version() == 11

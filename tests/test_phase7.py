@@ -40,11 +40,11 @@ def test_migrate_v8(db):
     v = db.execute(
         "select name from sqlite_master where type='view'").fetchall()
     assert any(r[0] == "latest_unified_quotes" for r in v)
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 11
 
 
 def test_config_schema_version_is_8():
-    assert env.schema_version() == 10
+    assert env.schema_version() == 11
 
 
 # ---------- 2/3. 时间三态 + content_hash ----------

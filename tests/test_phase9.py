@@ -139,8 +139,8 @@ def test_migrate_v10(db):
     tables = {r[0] for r in db.execute(
         "select name from sqlite_master where type='table'")}
     assert "backup_runs" in tables
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 11
 
 
 def test_config_schema_version_is_10():
-    assert env.schema_version() == 10
+    assert env.schema_version() == 11
