@@ -38,7 +38,7 @@ def test_migrate_v5_rejection_table(db):
     tables = {r[0] for r in db.execute(
         "select name from sqlite_master where type='table'")}
     assert "quality_errors" in tables
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 9
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 10
 
 
 def test_migrate_v5_idempotent(db):

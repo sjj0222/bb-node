@@ -293,6 +293,57 @@ def _cmd_unified(args):
         c.close()
 
 
+def _cmd_backup(args):
+    """Phase 11: 备份/恢复/保留策略(规格 §15)。"""
+    from ops import backup as bk
+    from database.db import connect
+    c = connect()
+    try:
+        if args.sub == "create":
+            m = bk.backup(conn=c, dest_dir=args.dest,
+                          retention_days=args.retention_days,
+                          max_backups=args.max_backups)
+            _out_json(m) if getattr(args, "json", False) else print(
+                "backup ok: %s (%d bytes, sha256 %s, integrity %s)"
+                % (m["dest"], m["size_bytes"], m["sha256"][:12],
+                   m["integrity_check"]))
+        elif args.sub == "list":
+            rows = bk.list_backups(dest_dir=args.dest)
+            _out_json(rows) if getattr(args, "json", False) else [
+                print(r) for r in rows]
+        elif args.sub == "restore":
+            res = bk.restore(args.file, dest=args.dest, force=args.force)
+            print(res)
+    finally:
+        c.close()
+
+
+def _cmd_security(args):
+    """Phase 11: 秘密扫描与日志轮转(规格 §13.2/13.4)。"""
+    from ops import backup as bk
+    import os
+    root = args.root or os.path.dirname(os.path.abspath(__file__))
+    if args.sub == "scan":
+        findings = bk.scan_secrets(root, max_matches=args.max_matches)
+        if getattr(args, "json", False):
+            _out_json({"findings": findings,
+                       "hygiene": bk.verify_env_hygiene(root)})
+            return
+        print("疑似秘密明文 %d 处:" % len(findings))
+        for f in findings:
+            print("  %s:%d  (%s)" % (f["file"], f["line"], f["pattern"]))
+        print("env 卫生:", bk.verify_env_hygiene(root))
+    elif args.sub == "rotate":
+        from core import env as _env
+        import os as _os
+        log_dir = args.log_dir or _os.path.join(
+            _os.path.dirname(_env.log_path()), "logs")
+        rotated = bk.rotate_logs(log_dir, max_bytes=args.max_bytes,
+                                 keep=args.keep)
+        _out_json({"rotated": rotated}) if getattr(args, "json", False) \
+            else print("rotated:", rotated)
+
+
 def _dump(rows, args):
     import json as _json
     if getattr(args, "json", False):
@@ -442,6 +493,24 @@ def main():
 
     sub.add_parser("quality").add_argument("sub", choices=["run"], default="run")
 
+    bp = sub.add_parser("backup", help="Phase 11: 备份/恢复(规格 §15)")
+    bp.add_argument("sub", choices=["create", "list", "restore"])
+    bp.add_argument("--dest")
+    bp.add_argument("--retention-days", type=int, default=None)
+    bp.add_argument("--max-backups", type=int, default=14)
+    bp.add_argument("--file", help="restore 的备份文件路径")
+    bp.add_argument("--force", action="store_true")
+    _add_json(bp)
+
+    sp = sub.add_parser("security", help="Phase 11: 秘密扫描/日志轮转(§13)")
+    sp.add_argument("sub", choices=["scan", "rotate"])
+    sp.add_argument("--root")
+    sp.add_argument("--max-matches", type=int, default=100)
+    sp.add_argument("--log-dir")
+    sp.add_argument("--max-bytes", type=int, default=50 * 1024 * 1024)
+    sp.add_argument("--keep", type=int, default=5)
+    _add_json(sp)
+
     up = sub.add_parser("unified", help="Phase 7: Unified 查询(规格 §9.3)")
     up.add_argument("sub", choices=["query", "latest", "series",
                                     "compare", "plan"])
@@ -486,6 +555,8 @@ def main():
         "backtest": _cmd_backtest,
         "quality": _cmd_quality,
         "unified": _cmd_unified,
+        "backup": _cmd_backup,
+        "security": _cmd_security,
         "mapping": _cmd_mapping,
     }
     if args.cmd not in handlers:

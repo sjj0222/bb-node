@@ -33,11 +33,11 @@ def test_migrate_v6(db):
     us_cols = [r[1] for r in db.execute(
         "PRAGMA table_info(unified_snapshots)")]
     assert "superseded" in us_cols
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 9
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 10
 
 
 def test_config_schema_version_is_6():
-    assert env.schema_version() == 9
+    assert env.schema_version() == 10
 
 
 # ---------- 2. 候选进入人工队列 ----------

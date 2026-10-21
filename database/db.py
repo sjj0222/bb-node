@@ -632,6 +632,25 @@ def _migrate_v9(c):
     c.executescript(V9_TABLES)
 
 
+V10_TABLES = """
+CREATE TABLE IF NOT EXISTS backup_runs(
+    run_id TEXT PRIMARY KEY,
+    dest TEXT,
+    size_bytes INTEGER,
+    sha256 TEXT,
+    app_version TEXT,
+    schema_version INTEGER,
+    status TEXT,
+    created_at INTEGER
+);
+"""
+
+
+def _migrate_v10(c):
+    """V10(Phase 11): 备份运行记录(规格 §15 可审计)。"""
+    c.executescript(V10_TABLES)
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
@@ -641,6 +660,7 @@ MIGRATIONS = {
     7: _migrate_v7,
     8: _migrate_v8,
     9: _migrate_v9,
+    10: _migrate_v10,
 }
 
 
