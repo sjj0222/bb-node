@@ -258,9 +258,68 @@ def _migrate_v3(c):
     c.executescript(V3_TABLES)
 
 
+V4_TABLES = """
+CREATE TABLE IF NOT EXISTS raw_records(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    raw_path TEXT,
+    file_bytes INTEGER DEFAULT 0,
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    seen_count INTEGER DEFAULT 1,
+    parser_status TEXT DEFAULT 'PARSED',
+    UNIQUE(source, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS raw_observations(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    observed_at INTEGER NOT NULL,
+    ingest_run_id INTEGER,
+    file_bytes INTEGER DEFAULT 0,
+    UNIQUE(source, content_hash, observed_at)
+);
+
+CREATE TABLE IF NOT EXISTS unmapped_records(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    source_match_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    normalized_json TEXT,
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    seen_count INTEGER DEFAULT 1,
+    UNIQUE(source, source_match_id, reason)
+);
+"""
+
+
+def _migrate_v4(c):
+    """V4(Phase 2): RAW 观测历史/未映射落库/采集运行增强列。幂等、非破坏。
+
+    - raw_records: RAW 文件索引(内容寻址, 不可变)
+    - raw_observations: 每次抓取到同一 payload 的观测事实(保序)
+    - unmapped_records: 未映射记录落库, 不丢弃(规格: 未映射仍可查询)
+    - collection_runs 增加 run_type/pages/retries/partial/records_duplicate/error_code
+    """
+    c.executescript(V4_TABLES)
+    for col, decl in (
+        ("run_type", "TEXT"),
+        ("pages", "INTEGER DEFAULT 0"),
+        ("retries", "INTEGER DEFAULT 0"),
+        ("partial", "INTEGER DEFAULT 0"),
+        ("records_duplicate", "INTEGER DEFAULT 0"),
+        ("error_code", "TEXT"),
+    ):
+        _add_column(c, "collection_runs", col, decl)
+
+
 MIGRATIONS = {
     2: _migrate_v2,
     3: _migrate_v3,
+    4: _migrate_v4,
 }
 
 

@@ -65,6 +65,11 @@ class BBAdapter:
         }
 
     def get_page(self, page, typ):
+        j, _ = self._get_page_with_retries(page, typ)
+        return j
+
+    def _get_page_with_retries(self, page, typ):
+        """单页拉取(含重试), 返回 (json|None, 重试次数)。"""
         for n in range(3):
             try:
                 b = {
@@ -81,20 +86,32 @@ class BBAdapter:
                 r.raise_for_status()
                 j = r.json()
                 if j.get("success"):
-                    return j
+                    return j, n
             except Exception as e:
                 print("bb 重试", n + 1, str(e)[:60], flush=True)
                 time.sleep(2)
-        return None
+        return None, 3
 
     # ---------- 采集 ----------
-    def fetch(self, run_type=3, received_at=None):
-        """按 run_type 分页采集, 返回 {str(match_id): match}。"""
+    def fetch_with_meta(self, run_type=3, received_at=None):
+        """分页采集, 返回 (matches, meta)。
+
+        meta: {"pages", "retries", "partial", "error_code"}
+        R2 修复: 任一页失败 -> partial=True 显式标记, 不再静默视为完整成功。
+        """
         matches = {}
         page = 1
+        retries = 0
+        pages = 0
+        partial = False
+        error_code = None
         while True:
-            j = self.get_page(page, run_type)
-            if not j:
+            j, r = self._get_page_with_retries(page, run_type)
+            retries += r
+            pages += 1
+            if j is None:
+                partial = True
+                error_code = error_code or "PAGE_FAILED"
                 break
             d = j.get("data") or {}
             rec = d.get("records") or []
@@ -109,6 +126,15 @@ class BBAdapter:
                 break
             page += 1
             time.sleep(1)
+        self.last_collect_meta = {
+            "pages": pages, "retries": retries,
+            "partial": partial, "error_code": error_code,
+        }
+        return matches, self.last_collect_meta
+
+    def fetch(self, run_type=3, received_at=None):
+        """兼容接口: 仅返回 {str(match_id): match}。"""
+        matches, _ = self.fetch_with_meta(run_type, received_at)
         return matches
 
     def collect(self, run_type=3, received_at=None):

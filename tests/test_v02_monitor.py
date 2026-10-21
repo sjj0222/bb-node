@@ -30,6 +30,9 @@ def test_monitor_restart(db):
         m.restart()
         assert m.status()["state"] == RUNNING
         assert m.status()["monitor_run_id"] != s1 or m.rounds == 0
+        # 必须停止守护线程, 否则测试结束后线程仍会写已清理的库
+        m.stop()
+    assert m.status()["state"] == STOPPED
 
 
 def test_monitor_source_down_degraded_not_stop(db):

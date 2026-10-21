@@ -143,6 +143,10 @@ class SXBetAdapter:
                     bundle, env.raw_dir(self.source))
                 out.setdefault(eid, []).append(bundle)
 
+        # Phase 2: 无分页语义, 恒为完整成功
+        self.last_collect_meta = {
+            "pages": 1, "retries": 0, "partial": False, "error_code": None,
+        }
         return out
 
     # ---------- Normalize ----------
