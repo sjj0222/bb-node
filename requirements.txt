@@ -1,0 +1,10 @@
+# bb-node 运行时依赖(Phase 13 发布候选 0.3.0-rc1)
+
+运行时: 纯 Python 标准库(sqlite3/json/hashlib/urllib/re/time),
+无第三方运行时依赖; 目标 Python >= 3.10(在 3.12 上全量验证)。
+
+开发/测试:
+  pytest>=7          # tests/ 全量回归
+  (可选) requests     # 仅当 adapter 需要更复杂 HTTP 时, 当前未使用
+
+安装: 见 docs/INSTALL.md

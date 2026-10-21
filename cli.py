@@ -293,6 +293,30 @@ def _cmd_unified(args):
         c.close()
 
 
+def _cmd_version(args):
+    """Phase 13: 版本信息(VERSION + schema_version + git 描述)。"""
+    import os as _os
+    from core import env as _env
+    ver = "unknown"
+    vfile = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                          "VERSION")
+    if _os.path.exists(vfile):
+        with open(vfile, encoding="utf-8") as f:
+            ver = f.read().strip()
+    out = {"version": ver, "schema_version": _env.schema_version()}
+    try:
+        import subprocess
+        out["git_head"] = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=_os.path.dirname(_os.path.abspath(__file__)),
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        out["git_head"] = None
+    _out_json(out) if getattr(args, "json", False) else print(
+        "bb-node %s (schema v%s, git %s)"
+        % (out["version"], out["schema_version"], out["git_head"] or "-"))
+
+
 def _cmd_backup(args):
     """Phase 11: 备份/恢复/保留策略(规格 §15)。"""
     from ops import backup as bk
@@ -493,6 +517,9 @@ def main():
 
     sub.add_parser("quality").add_argument("sub", choices=["run"], default="run")
 
+    vp = sub.add_parser("version", help="Phase 13: 版本信息")
+    _add_json(vp)
+
     bp = sub.add_parser("backup", help="Phase 11: 备份/恢复(规格 §15)")
     bp.add_argument("sub", choices=["create", "list", "restore"])
     bp.add_argument("--dest")
@@ -554,6 +581,7 @@ def main():
         "replay": _cmd_replay,
         "backtest": _cmd_backtest,
         "quality": _cmd_quality,
+        "version": _cmd_version,
         "unified": _cmd_unified,
         "backup": _cmd_backup,
         "security": _cmd_security,
