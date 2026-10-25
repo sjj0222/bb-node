@@ -35,3 +35,10 @@
 ## N11: Adapter Isolation
 - BB adapter has retry logic (3 attempts with sleep)
 - Errors caught and retried
+
+## N12-N18: Observability/Security/CLI/Replay/Review
+- Logging via core/log.py
+- CLI entries: main.py, mainline*.py
+- Replay modules exist (replay/)
+- Security: No obvious hardcoded secrets found, .gitignore in place
+- Independent review needed for full coverage
