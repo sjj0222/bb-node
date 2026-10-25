@@ -1,0 +1,19 @@
+{
+  "night_run": "2026-10-26",
+  "base_sha": "74cff43929f997f9f72fdbae8649b39221b8b4b8",
+  "branch": "night/bb-node-foundation-20261026",
+  "tasks": {
+    "N00": {"status": "PASS", "type": "audit"},
+    "N01": {"status": "PASS", "type": "audit"},
+    "N02": {"status": "PASS", "type": "test"},
+    "N03": {"status": "NOT RUN", "type": "test/fix"},
+    "N04": {"status": "PASS", "type": "audit"},
+    "N05": {"status": "NOT RUN", "type": "test/fix"},
+    "N06": {"status": "NOT RUN", "type": "test/fix"},
+    "N07": {"status": "PASS", "type": "audit"},
+    "N08-N18": {"status": "NOT RUN", "type": "various"}
+  },
+  "tests": {"bb_node_overnight_v1": {"total": 12, "passed": 12}, "bb_main_unit_tests_v1": {"total": 10, "passed": 10}},
+  "main_modified": false,
+  "raw_modified": false
+}
