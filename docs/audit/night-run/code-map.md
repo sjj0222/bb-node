@@ -16,3 +16,22 @@
 - `parse_line()` averages split values (loses sign info) - different from events/line.py
 - Preserves `line_raw` in MarketMapping
 - Side detection by option matching home/away
+
+## N08: Conflicts/Duplicates
+- No explicit conflict resolution framework found
+- Deduplication appears implicit
+- Recommendation: Add tests for duplicate handling
+
+## N09: Time/Timezone
+- Uses timestamps (int), API uses ms timestamps
+- source_time vs ingest_time distinction exists in schema
+- Timezone handling not obvious
+
+## N10: Persistence/Transactions
+- SQLite used throughout
+- Uses explicit commit() calls
+- Transaction boundaries need review
+
+## N11: Adapter Isolation
+- BB adapter has retry logic (3 attempts with sleep)
+- Errors caught and retried
