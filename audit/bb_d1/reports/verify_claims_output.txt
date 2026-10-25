@@ -1,0 +1,93 @@
+==============================================================================
+A. ladder.txt per-series statistics (verify CE10)
+==============================================================================
+  option rows parsed      : 3470
+  (match,market,option)   : 128
+  series with >1 distinct line string : 0
+  => ladder.txt contains NO line changes at all
+
+==============================================================================
+B. ladder_v7.txt option-level transitions vs SPEC / MAIN / CANDIDATE
+==============================================================================
+  option-level transitions recovered : 52
+  SPEC: same-line transitions = 0 | sign-flip transitions = 28
+  MAIN  changed=True count = 52
+  CAND  changed=True count = 52
+
+  spec sign-flips MISSED by main   : 0
+  spec sign-flips MISSED by candidate: 0
+  FALSE POSITIVES main (spec says same/not-flip, main says changed) : 24
+     20260905_113239 match=5472408 全北现代: '-1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_113239 match=5472408 浦项制铁: '+1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_130825 match=5472409 首尔FC: '0' -> '-1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_130825 match=5472409 仁川联: '0' -> '+1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5472409 首尔FC: '-1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5472409 仁川联: '+1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5522345 朗斯: '-1.5/2' -> '-0.5'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5522345 洛里昂: '+1.5/2' -> '+0.5'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_141942 match=5472409 首尔FC: '0' -> '-1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_141942 match=5472409 仁川联: '0' -> '+1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_150038 match=5130772 曼彻斯特城: '-3' -> '-1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_150038 match=5130772 考文垂: '+3' -> '+1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_151044 match=5472408 全北现代: '0' -> '-1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_151044 match=5472408 浦项制铁: '0' -> '+1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_162021 match=5130772 曼彻斯特城: '-1.5/2' -> '-3'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_162021 match=5130772 考文垂: '+1.5/2' -> '+3'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5472408 全北现代: '-1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5472408 浦项制铁: '+1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5472409 首尔FC: '-0/0.5' -> '-1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5472409 仁川联: '+0/0.5' -> '+1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5130772 曼彻斯特城: '-3' -> '-1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5130772 考文垂: '+3' -> '+1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_170819 match=5472409 首尔FC: '-1.5' -> '-0/0.5'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_170819 match=5472409 仁川联: '+1.5' -> '+0/0.5'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+  FALSE POSITIVES candidate : 24
+     20260905_113239 match=5472408 全北现代: '-1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_113239 match=5472408 浦项制铁: '+1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_130825 match=5472409 首尔FC: '0' -> '-1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_130825 match=5472409 仁川联: '0' -> '+1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5472409 首尔FC: '-1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5472409 仁川联: '+1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5522345 朗斯: '-1.5/2' -> '-0.5'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_132839 match=5522345 洛里昂: '+1.5/2' -> '+0.5'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_141942 match=5472409 首尔FC: '0' -> '-1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_141942 match=5472409 仁川联: '0' -> '+1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_150038 match=5130772 曼彻斯特城: '-3' -> '-1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_150038 match=5130772 考文垂: '+3' -> '+1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_151044 match=5472408 全北现代: '0' -> '-1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_151044 match=5472408 浦项制铁: '0' -> '+1/1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_162021 match=5130772 曼彻斯特城: '-1.5/2' -> '-3'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_162021 match=5130772 考文垂: '+1.5/2' -> '+3'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5472408 全北现代: '-1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5472408 浦项制铁: '+1/1.5' -> '0'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5472409 首尔FC: '-0/0.5' -> '-1.5'  {'changed': True, 'direction': 'CROSS', 'change_type': 'SIGN_FLIP', 'steps': 7.0}
+     20260905_165436 match=5472409 仁川联: '+0/0.5' -> '+1.5'  {'changed': True, 'direction': 'DEEPER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5130772 曼彻斯特城: '-3' -> '-1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_165436 match=5130772 考文垂: '+3' -> '+1.5/2'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+     20260905_170819 match=5472409 首尔FC: '-1.5' -> '-0/0.5'  {'changed': True, 'direction': 'CROSS', 'change_type': 'SIGN_FLIP', 'steps': 7.0}
+     20260905_170819 match=5472409 仁川联: '+1.5' -> '+0/0.5'  {'changed': True, 'direction': 'SHALLOWER', 'change_type': 'MULTI_STEP', 'steps': 5.0}
+
+==============================================================================
+C. how each implementation labels a detected spec-flip (units differ?)
+==============================================================================
+          '-1' -> '+0/0.5'     MAIN SHALLOWER/MULTI_STEP/3.0   CAND CROSS/SIGN_FLIP/5.0
+          '+1' -> '-0/0.5'     MAIN SHALLOWER/MULTI_STEP/3.0   CAND SHALLOWER/MULTI_STEP/3.0
+      '+0/0.5' -> '-1'         MAIN DEEPER/MULTI_STEP/3.0   CAND CROSS/SIGN_FLIP/5.0
+      '-0/0.5' -> '+1'         MAIN DEEPER/MULTI_STEP/3.0   CAND DEEPER/MULTI_STEP/3.0
+          '-1' -> '+0/0.5'     MAIN SHALLOWER/MULTI_STEP/3.0   CAND CROSS/SIGN_FLIP/5.0
+          '+1' -> '-0/0.5'     MAIN SHALLOWER/MULTI_STEP/3.0   CAND SHALLOWER/MULTI_STEP/3.0
+      '+0.5/1' -> '-0.5'       MAIN SHALLOWER/QUARTER_STEP/1.0   CAND CROSS/SIGN_FLIP/5.0
+      '-0.5/1' -> '+0.5'       MAIN SHALLOWER/QUARTER_STEP/1.0   CAND CROSS/SIGN_FLIP/5.0
+
+==============================================================================
+D. plq robustness spot-checks (verify CE2/CE3/CE4)
+==============================================================================
+  plq('0.125') = ('0:0', 0)
+  plq('0.625') = ('2:2', 2)
+  plq('-0.5/-0.25') = ('-2:1', -1)
+  plq('-1/+1') = ('-4:-4', -4)
+  plq('inf') RAISED OverflowError: cannot convert float infinity to integer
+  plq('1e400') RAISED OverflowError: cannot convert float infinity to integer
+  plq('0.1') = ('0:0', 0)
+  plq('-0') = ('0:0', 0)
+  plq('0') = ('0:0', 0)

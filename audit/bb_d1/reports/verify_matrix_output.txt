@@ -1,0 +1,38 @@
+real option-level transitions: 52
+
+=== CONFUSION MATRIX  (SPEC -> MAIN / SPEC -> CANDIDATE) ===
+  SPEC=SAME      MAIN -> {}
+  SPEC=SAME      CAND -> {}
+  SPEC=MAGNITUDE MAIN -> {'MAGNITUDE': 24}
+  SPEC=MAGNITUDE CAND -> {'MAGNITUDE': 22, 'FLIP': 2}
+  SPEC=FLIP      MAIN -> {'MAGNITUDE': 28}
+  SPEC=FLIP      CAND -> {'FLIP': 18, 'MAGNITUDE': 10}
+
+=== CANDIDATE misclassifications (spec != candidate) ===
+  total mismatches: 12
+   20260905_092122 match=5130776 伯恩茅斯: '+1' -> '-0/0.5'
+        SPEC=FLIP (mid 4->-1, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_100427 match=5130776 伯恩茅斯: '-0/0.5' -> '+1'
+        SPEC=FLIP (mid -1->4, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_123740 match=5130776 伯恩茅斯: '+1' -> '-0/0.5'
+        SPEC=FLIP (mid 4->-1, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_124743 match=5192197 桑坦德竞技: '-0/0.5' -> '+1'
+        SPEC=FLIP (mid -1->4, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_125815 match=5130776 伯恩茅斯: '-0/0.5' -> '+1'
+        SPEC=FLIP (mid -1->4, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_133852 match=5130776 伯恩茅斯: '+1' -> '-0/0.5'
+        SPEC=FLIP (mid 4->-1, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_134906 match=5130776 伯恩茅斯: '-0/0.5' -> '+1'
+        SPEC=FLIP (mid -1->4, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_152104 match=5130776 伯恩茅斯: '+1' -> '-0/0.5'
+        SPEC=FLIP (mid 4->-1, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_162021 match=5130776 伯恩茅斯: '-0/0.5' -> '+1'
+        SPEC=FLIP (mid -1->4, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_164104 match=5130776 伯恩茅斯: '+1' -> '-0/0.5'
+        SPEC=FLIP (mid 4->-1, in quarter balls)  MAIN=MAGNITUDE  CAND=MAGNITUDE
+   20260905_165436 match=5472409 首尔FC: '-0/0.5' -> '-1.5'
+        SPEC=MAGNITUDE (mid -1->-6, in quarter balls)  MAIN=MAGNITUDE  CAND=FLIP
+   20260905_170819 match=5472409 首尔FC: '-1.5' -> '-0/0.5'
+        SPEC=MAGNITUDE (mid -6->-1, in quarter balls)  MAIN=MAGNITUDE  CAND=FLIP
+
+=== the 2 sides of the same market move, classified by each impl ===
