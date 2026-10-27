@@ -31,12 +31,12 @@ def main():
  old={}
  for r in A:
   k=(r["source"],r["canonical_match_id"],r["market_type"],
-     r["period"],r["side"],r["option"])
+     r["period"],r["side"],r["option"],r["source_market_id"])
   old.setdefault(k,[]).append(r)
  n=0
  for r in B:
   k=(r["source"],r["canonical_match_id"],r["market_type"],
-     r["period"],r["side"],r["option"])
+     r["period"],r["side"],r["option"],r["source_market_id"])
   cand=old.get(k,[])
   if not cand: continue
   a=min(cand,key=lambda x:abs((x["line"] or 0)-(r["line"] or 0)))
