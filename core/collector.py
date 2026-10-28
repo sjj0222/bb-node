@@ -263,7 +263,21 @@ def save_new_layers(raw_matches,received_at):
             try:
                 existing = get_by_source(x.source, x.source_match_id)
                 if existing and existing.get("canonical_match_id") and existing.get("status") == "matched":
-                    cid = existing.get("canonical_match_id")
+                    cand = existing.get("canonical_match_id")
+                    # validate consistency if possible
+                    try:
+                        eh = existing.get("home")
+                        ea = existing.get("away")
+                        eet = existing.get("event_time")
+                        if eh is not None and ea is not None and eet is not None:
+                            recalc = make_canonical_id(eh, ea, eet)
+                            if recalc == cand:
+                                cid = cand
+                        else:
+                            # if fields missing, cannot safely validate - do not guess; skip
+                            pass
+                    except Exception:
+                        pass
             except Exception:
                 pass
 

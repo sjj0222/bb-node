@@ -65,12 +65,16 @@ def save_mapping(r):
 
 def get_by_source(source, source_match_id):
     c = connect()
-    r = c.execute("""
+    rows = c.execute("""
     SELECT * FROM match_mappings
     WHERE source=? AND source_match_id=?
-    """,(source,str(source_match_id))).fetchone()
+    """,(source,str(source_match_id))).fetchall()
     c.close()
-    return dict(r) if r else None
+    if not rows:
+        return None
+    if len(rows) != 1:
+        return None
+    return dict(rows[0])
 
 def get_by_canonical(canonical_match_id):
     c = connect()
