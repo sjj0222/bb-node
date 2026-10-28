@@ -161,18 +161,16 @@ class TestCanonicalMatchSync(unittest.TestCase):
         self.assertIsNone(row['canonical_match_id'])
 
     def test_unique_constraint_enforced(self):
+        import sqlite3
         now = int(time.time() * 1000)
         c = sqlite3.connect(db.DB)
         cur = c.cursor()
         try:
             cur.execute("""INSERT INTO match_mappings(source,source_match_id,canonical_match_id,home,away,event_time,confidence,status,created_at,updated_at)
                            VALUES(?,?,?,?,?,?,?,?,?,?)""", ('BB', 'M_DUP', 'cm1', 'A', 'B', 1700000000000, 1.0, 'matched', now, now))
-            cur.execute("""INSERT INTO match_mappings(source,source_match_id,canonical_match_id,home,away,event_time,confidence,status,created_at,updated_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?)""", ('BB', 'M_DUP', 'cm2', 'A', 'B', 1700000000000, 1.0, 'matched', now, now))
-            c.commit()
-            self.fail('expected constraint violation')
-        except Exception:
-            pass
+            with self.assertRaises(sqlite3.IntegrityError):
+                cur.execute("""INSERT INTO match_mappings(source,source_match_id,canonical_match_id,home,away,event_time,confidence,status,created_at,updated_at)
+                               VALUES(?,?,?,?,?,?,?,?,?,?)""", ('BB', 'M_DUP', 'cm2', 'A', 'B', 1700000000000, 1.0, 'matched', now, now))
         finally:
             c.close()
 
