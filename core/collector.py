@@ -8,7 +8,7 @@ from sources.bb import BBAdapter
 from mapping.match import make_canonical_id
 from mapping.service import auto_map
 from mapping.unified_service import unify
-from mapping.db import init_mapping
+from mapping.db import init_mapping, get_by_source
 from mapping.market_db import init_market_mapping
 from mapping.unified_db import init_unified
 from core.log import start,finish,error
@@ -257,7 +257,15 @@ def save_new_layers(raw_matches,received_at):
         x=records[0]
 
         mm=auto_map(x,x)
-        cid=mm["canonical_match_id"]
+        cid=mm.get("canonical_match_id")
+
+        if not cid:
+            try:
+                existing = get_by_source(x.source, x.source_match_id)
+                if existing and existing.get("canonical_match_id") and existing.get("status") == "matched":
+                    cid = existing.get("canonical_match_id")
+            except Exception:
+                pass
 
         match_count+=1
         total_norm+=len(records)

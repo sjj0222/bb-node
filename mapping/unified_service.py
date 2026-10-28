@@ -1,8 +1,18 @@
 from .market import normalize
 from .unified_db import save_unified
+from .db import get_by_source
+
 
 def unify(record, canonical_match_id=None):
-    market=normalize(record)
+    market = normalize(record)
+    cid = canonical_match_id
+    if not cid:
+        try:
+            existing = get_by_source(record.source, record.source_match_id)
+            if existing and existing.get("canonical_match_id") and existing.get("status") == "matched":
+                cid = existing.get("canonical_match_id")
+        except Exception:
+            pass
 
     save_unified(
         type("UnifiedRecord",(),{
@@ -22,7 +32,7 @@ def unify(record, canonical_match_id=None):
             "received_at":record.received_at,
             "raw_ref":record.raw_ref
         })(),
-        canonical_match_id=canonical_match_id
+        canonical_match_id=cid
     )
 
     return market
