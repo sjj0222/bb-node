@@ -1,6 +1,7 @@
 from .market import normalize
 from .unified_db import save_unified
 from .db import get_by_source
+from .match import make_canonical_id
 
 
 def unify(record, canonical_match_id=None):
@@ -10,7 +11,19 @@ def unify(record, canonical_match_id=None):
         try:
             existing = get_by_source(record.source, record.source_match_id)
             if existing and existing.get("canonical_match_id") and existing.get("status") == "matched":
-                cid = existing.get("canonical_match_id")
+                cand = existing.get("canonical_match_id")
+                try:
+                    eh = existing.get("home")
+                    ea = existing.get("away")
+                    eet = existing.get("event_time")
+                    if eh is not None and ea is not None and eet is not None:
+                        recalc = make_canonical_id(eh, ea, eet)
+                        if recalc == cand:
+                            cid = cand
+                    else:
+                        pass
+                except Exception:
+                    pass
         except Exception:
             pass
 
