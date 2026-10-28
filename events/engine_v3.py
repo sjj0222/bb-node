@@ -4,6 +4,26 @@ from core.log import start,finish,error
 
 DB="data/bb.db"
 
+
+def _is_valid_market_id(v):
+ if v is None:
+  return False
+ try:
+  s = str(v)
+ except Exception:
+  return False
+ if s == "":
+  return False
+ if s.strip() == "":
+  return False
+ if s == "None":
+  return False
+ # also catch common string forms of None
+ if s.strip().lower() == "none":
+  return False
+ return True
+
+
 def h(*x):
  s="|".join("" if v is None else str(v) for v in x)
  return hashlib.sha256(s.encode()).hexdigest()
@@ -29,14 +49,31 @@ def main():
  A=[r for r in rows if r["received_at"]==oldt]
  B=[r for r in rows if r["received_at"]==newt]
  old={}
+ skipped=0
  for r in A:
+  try:
+   smid = r["source_market_id"]
+  except Exception:
+   skipped += 1
+   continue
+  if not _is_valid_market_id(smid):
+   skipped += 1
+   continue
   k=(r["source"],r["canonical_match_id"],r["market_type"],
-     r["period"],r["side"],r["option"],r["source_market_id"])
+     r["period"],r["side"],r["option"],smid)
   old.setdefault(k,[]).append(r)
  n=0
  for r in B:
+  try:
+   smid = r["source_market_id"]
+  except Exception:
+   skipped += 1
+   continue
+  if not _is_valid_market_id(smid):
+   skipped += 1
+   continue
   k=(r["source"],r["canonical_match_id"],r["market_type"],
-     r["period"],r["side"],r["option"],r["source_market_id"])
+     r["period"],r["side"],r["option"],smid)
   cand=old.get(k,[])
   if not cand: continue
   a=min(cand,key=lambda x:abs((x["line"] or 0)-(r["line"] or 0)))

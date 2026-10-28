@@ -3,8 +3,28 @@ from events.line import compare_line
 
 DB="data/bb.db"
 
+
+def _is_valid_market_id(v):
+ if v is None:
+  return False
+ try:
+  s = str(v)
+ except Exception:
+  return False
+ if s == "":
+  return False
+ if s.strip() == "":
+  return False
+ if s == "None":
+  return False
+ if s.strip().lower() == "none":
+  return False
+ return True
+
+
 def h(*x):
  return hashlib.sha256("|".join("" if v is None else str(v) for v in x).encode()).hexdigest()
+
 
 def replay(c,oldt,newt):
  A=c.execute("select * from unified_snapshots where received_at=? and canonical_match_id is not null",(oldt,)).fetchall()
@@ -12,12 +32,24 @@ def replay(c,oldt,newt):
 
  old={}
  for r in A:
-  k=(r["source"],r["canonical_match_id"],r["market_type"],r["period"],r["side"],r["option"])
+  try:
+   smid = r["source_market_id"]
+  except Exception:
+   continue
+  if not _is_valid_market_id(smid):
+   continue
+  k=(r["source"],r["canonical_match_id"],r["market_type"],r["period"],r["side"],r["option"],smid)
   old.setdefault(k,[]).append(r)
 
  n=0
  for r in B:
-  k=(r["source"],r["canonical_match_id"],r["market_type"],r["period"],r["side"],r["option"])
+  try:
+   smid = r["source_market_id"]
+  except Exception:
+   continue
+  if not _is_valid_market_id(smid):
+   continue
+  k=(r["source"],r["canonical_match_id"],r["market_type"],r["period"],r["side"],r["option"],smid)
   cand=old.get(k,[])
   if not cand: continue
   a=min(cand,key=lambda x:abs((x["line"] or 0)-(r["line"] or 0)))

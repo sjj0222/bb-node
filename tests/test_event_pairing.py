@@ -192,7 +192,7 @@ class TestEventPairing(unittest.TestCase):
         self.assertEqual(self.count_events(), 0)
 
     def test_empty_source_market_id_pairs_with_empty(self):
-        """source_market_id 为空字符串的行，空字符串之间应正常配对。"""
+        """source_market_id 为空字符串的行，无效ID不参与配对。"""
         rows_a = [
             self._base_row({"source_market_id": ""}),
         ]
@@ -208,7 +208,7 @@ class TestEventPairing(unittest.TestCase):
         ]
         self.insert_rows(rows_a + rows_b)
         E.main()
-        self.assertEqual(self.count_events(), 2)
+        self.assertEqual(self.count_events(), 0)
 
     def test_no_backfill_for_unmatched_b_rows(self):
         """B 侧没有匹配的 A 行时，不应静默产生事件。"""
@@ -228,6 +228,84 @@ class TestEventPairing(unittest.TestCase):
         self.insert_rows(rows_a + rows_b)
         E.main()
         self.assertEqual(self.count_events(), 0)
+
+    def test_string_none_source_market_id_not_paired(self):
+        """字符串 \"None\" 为无效ID，不参与配对。"""
+        rows_a = [
+            self._base_row({"source_market_id": "None"}),
+        ]
+        rows_b = [
+            self._base_row({
+                "source_market_id": "None",
+                "received_at": 2000,
+                "created_at": 2000,
+                "line_raw": "-0.75",
+                "line": -0.75,
+                "odds": 1.81,
+            }),
+        ]
+        self.insert_rows(rows_a + rows_b)
+        E.main()
+        self.assertEqual(self.count_events(), 0)
+
+    def test_missing_source_market_id_not_paired(self):
+        """缺失 source_market_id 字段应视为无效，不参与配对。"""
+        c = sqlite3.connect(E.DB)
+        cur = c.cursor()
+        cur.execute("DROP TABLE IF EXISTS unified_snapshots")
+        cur.execute("""create table if not exists unified_snapshots(
+         id integer primary key AUTOINCREMENT,
+         canonical_match_id text,
+         source text NOT NULL,
+         bookmaker text,
+         source_match_id text NOT NULL,
+         market_type text NOT NULL,
+         period text,
+         line_raw text,
+         line real,
+         side text,
+         option text NOT NULL,
+         odds real,
+         event_time integer,
+         server_time integer,
+         received_at integer NOT NULL,
+         raw_ref text,
+         created_at integer NOT NULL)""")
+        cur.execute("""insert into unified_snapshots(canonical_match_id,source,bookmaker,source_match_id,market_type,period,line_raw,line,side,option,odds,event_time,server_time,received_at,raw_ref,created_at)
+                       values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    ("cm_123","BB","","match_1","HDP","FULL","-0.5",-0.5,"HOME","HOME",1.90,1700000000,1700000000,1000,"","1000"))
+        cur.execute("""insert into unified_snapshots(canonical_match_id,source,bookmaker,source_match_id,market_type,period,line_raw,line,side,option,odds,event_time,server_time,received_at,raw_ref,created_at)
+                       values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    ("cm_123","BB","","match_1","HDP","FULL","-0.75",-0.75,"HOME","HOME",1.81,1700000000,1700000000,2000,"","2000"))
+        c.commit()
+        c.close()
+        E.main()
+        self.assertEqual(self.count_events(), 0)
+        # restore
+        c = sqlite3.connect(E.DB)
+        cur = c.cursor()
+        cur.execute("DROP TABLE IF EXISTS unified_snapshots")
+        cur.execute("""create table if not exists unified_snapshots(
+         id integer primary key AUTOINCREMENT,
+         canonical_match_id text,
+         source text NOT NULL,
+         bookmaker text,
+         source_match_id text NOT NULL,
+         source_market_id text NOT NULL,
+         market_type text NOT NULL,
+         period text,
+         line_raw text,
+         line real,
+         side text,
+         option text NOT NULL,
+         odds real,
+         event_time integer,
+         server_time integer,
+         received_at integer NOT NULL,
+         raw_ref text,
+         created_at integer NOT NULL)""")
+        c.commit()
+        c.close()
 
 
 if __name__ == "__main__":
