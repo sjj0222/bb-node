@@ -3,8 +3,28 @@ from events.line import compare_line
 
 DB="data/bb.db"
 
+
+def _is_valid_market_id(v):
+ if v is None:
+  return False
+ try:
+  s = str(v)
+ except Exception:
+  return False
+ if s == "":
+  return False
+ if s.strip() == "":
+  return False
+ if s == "None":
+  return False
+ if s.strip().lower() == "none":
+  return False
+ return True
+
+
 def h(*x):
  return hashlib.sha256("|".join("" if v is None else str(v) for v in x).encode()).hexdigest()
+
 
 def main():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
@@ -28,15 +48,27 @@ def main():
 
   old={}
   for r in A:
+   try:
+    smid = r["source_market_id"]
+   except Exception:
+    continue
+   if not _is_valid_market_id(smid):
+    continue
    k=(r["source"],r["canonical_match_id"],r["market_type"],
-      r["period"],r["side"],r["option"])
+      r["period"],r["side"],r["option"],smid)
    old.setdefault(k,[]).append(r)
 
   n=0
 
   for r in B:
+   try:
+    smid = r["source_market_id"]
+   except Exception:
+    continue
+   if not _is_valid_market_id(smid):
+    continue
    k=(r["source"],r["canonical_match_id"],r["market_type"],
-      r["period"],r["side"],r["option"])
+      r["period"],r["side"],r["option"],smid)
    cand=old.get(k,[])
    if not cand: continue
 
