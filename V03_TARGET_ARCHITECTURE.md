@@ -1,7 +1,7 @@
-# V0.3 目标架构报告
+# V0.3 目标架构报告（修订版）
 
-> 基线：phase1 (`d39c7aa`)。  
-> 仅用于读取与分析，未执行任何写入。
+> 基线：phase1 @ d39c7aa。  
+> 本文件仅用于读取与分析，保存在 AndroidHarness 独立工作区 `v03_planning/`，**不修改 bb-node 仓库**。
 
 ---
 
@@ -12,8 +12,9 @@
 3. **比赛映射与盘口映射分离**：match_mappings 与 market_mappings 独立表、独立索引、独立生命周期。
 4. **数据库迁移脚本独立管理**：schema 版本与迁移脚本置于 `database/migrations/`，不与运行代码混杂。
 5. **导出功能独立**：export 模块不依赖采集链路，仅读取数据库与 RAW 文件。
-6. **Android、Windows 客户端与核心业务逻辑解耦**：客户端仅调用核心库的 REST/本地 API，不嵌入采集逻辑。
+6. **Android、Windows 客户端与核心业务逻辑解耦**：客户端仅通过 API 调用核心库，不嵌入采集逻辑。
 7. **P2P 和高级分析模块可后续接入**：预留接口，不影响基础采集。
+8. **创建客户端目录不等于 APK/EXE 可交付**：客户端目录仅用于架构规划与接口预留，实际构建、签名、打包属于后续独立工作。
 
 ---
 
@@ -65,11 +66,11 @@ bb-node/
 │   ├── __init__.py
 │   └── orchestrator.py          # 简化版采集管道（COLLECT → NORMALIZE → MAPPING → UNIFIED）
 ├── client/
-│   ├── android/                 # Android 源码（新增，与核心解耦）
+│   ├── android/                 # Android 客户端架构目录（仅预留，非可交付 APK）
 │   │   ├── app/
 │   │   ├── build.gradle
 │   │   └── AndroidManifest.xml
-│   └── windows/                 # Windows 源码（新增，与核心解耦）
+│   └── windows/                 # Windows 客户端架构目录（仅预留，非可交付 EXE）
 │       ├── main.py / .cs
 │       └── *.spec / *.csproj
 ├── scripts/
@@ -101,8 +102,8 @@ bb-node/
 | `sources/` | 源适配器、RAW 保存、标准化 | core.base | 是 | bb.py 需保留 save_raw 扩展（经审计后合并） |
 | `export/` | JSON/CSV 导出 | database, data/raw | 是 | 新增模块，从 phase1/v0.2 提取导出逻辑 |
 | `pipeline/` | 简化版采集管道 | core, sources, mapping, export | 是 | 从 phase1 pipeline.orchestrator 精简，去除 Event/Feature/Strategy 等下游阶段 |
-| `client/android/` | Android APK 源码 | 核心库（通过本地 API 调用） | 是 | 新增，与核心解耦，V0.3 仅需安装运行 |
-| `client/windows/` | Windows EXE 源码 | 核心库（通过本地 API 调用） | 是 | 新增，与核心解耦，V0.3 仅需安装运行 |
+| `client/android/` | Android 客户端架构目录 | 核心库（通过 API 调用） | 是（架构仅） | 仅预留目录，**不等于 APK 可交付** |
+| `client/windows/` | Windows 客户端架构目录 | 核心库（通过 API 调用） | 是（架构仅） | 仅预留目录，**不等于 EXE 可交付** |
 | `scripts/` | 备份与恢复 | database, data | 是 | 新增，V0.3 必须具备备份恢复能力 |
 | `tests/` | 单元测试与集成测试 | 所有核心模块 | 是 | 从 phase1 提取纯函数测试，新增导出测试 |
 | `events/` | 事件引擎 | mapping, database | 否 | 后续阶段（V0.4+），预留接口 |
@@ -117,35 +118,78 @@ bb-node/
 
 ---
 
-## 4. 数据流向（V0.3）
+## 4. 客户端架构（重新明确）
+
+### 4.1 核心采集服务运行位置
+
+核心采集服务（`core/collector.py`、`pipeline/orchestrator.py`、`mapping/`、`sources/`、`database/`）运行在**独立的后台进程或服务器上**，不运行在 Android 或 Windows 客户端内。客户端不承担采集职责，仅负责数据展示与配置。
+
+### 4.2 Android 客户端如何访问核心服务
+
+- Android 客户端通过**本地 API 或远程 API** 访问核心服务。
+- 若核心服务部署在同一设备上，通过本地 HTTP API 或本地 SQLite 文件共享访问。
+- 若核心服务部署在远程服务器，通过 HTTPS API 访问。
+- Android 沙盒限制：客户端只能访问应用私有目录（`/data/data/<package>/`）或外部存储授权目录，不能直接访问核心服务运行在系统级目录下的数据库文件。数据交互必须通过 API 接口完成，客户端不直接读写核心服务的 SQLite 文件。
+
+### 4.3 Windows 客户端如何访问核心服务
+
+- Windows 客户端通过**本地 API 或远程 API** 访问核心服务。
+- 若核心服务部署在同一机器，通过本地 HTTP API 或共享数据目录访问。
+- 若核心服务部署在远程服务器，通过 HTTPS API 访问。
+- Windows 数据目录：使用 `%APPDATA%` 或用户文档目录，避免写入程序安装目录。
+
+### 4.4 是否采用本地 API
+
+**是**。核心服务提供本地 API（HTTP 或进程间通信），客户端通过本地 API 调用核心功能，实现客户端与核心业务逻辑的解耦。
+
+### 4.5 SQLite 文件由谁负责读写
+
+- **核心服务进程**：负责 SQLite 数据库的所有读写操作（采集、映射、统一、导出数据源）。
+- **客户端**：仅通过 API 读取数据，不直接读写核心服务的 SQLite 文件，避免并发冲突和文件锁定问题。
+
+### 4.6 Android 沙盒与 Windows 数据目录处理
+
+| 平台 | 数据目录 | 处理方式 |
+|---|---|---|
+| Android | `/data/data/<package>/files/` 或 `getExternalFilesDir()` | 客户端私有目录，仅存储客户端缓存、配置、导出文件副本；不存储核心服务主数据库 |
+| Windows | `%APPDATA%\BB-Node\` 或用户文档目录 | 客户端数据目录，存储配置、缓存、导出文件副本；不存储核心服务主数据库 |
+
+### 4.7 客户端升级不能覆盖用户数据
+
+- 客户端安装包升级时，仅替换程序文件（APK/EXE 及相关资源），不触碰用户数据目录。
+- 用户配置、缓存、导出文件存储在与程序文件分离的数据目录中，升级保留。
+- 客户端不负责核心服务数据库的升级，数据库迁移由核心服务独立管理。
+
+---
+
+## 5. 数据流向（V0.3）
 
 ```
 BB Adapter API
       │
       ▼
-sources/bb.BBAdapter.save_raw() ─────────► data/raw/bb/<sha256>.json  (RAW 原始，不覆盖)
+核心采集服务（后台进程/服务器）
+  sources/bb.BBAdapter.save_raw() ─────────► data/raw/bb/<sha256>.json  (RAW 原始，不覆盖)
+  sources/bb.BBAdapter.normalize() ───────► NormalizedRecord (标准化记录)
+  core/collector.collect() ───────────────► database/db: collection_runs (批次记录)
+  ├─► mapping/db.save_mapping() ───► match_mappings (比赛映射)
+  ├─► mapping/market_db.save() ───► market_mappings (盘口映射)
+  ├─► mapping/unified_db.save_unified() ──► unified_snapshots (统一快照)
+  └─► database/db: snapshots (采集快照)
       │
       ▼
-sources/bb.BBAdapter.normalize() ───────► NormalizedRecord (标准化记录)
+  export/json_export.py / csv_export.py ──► 导出文件 (JSON/CSV)
       │
       ▼
-core/collector.collect() ───────────────► database/db: collection_runs (批次记录)
-      │
-      ├─► mapping/db.save_mapping() ───► match_mappings (比赛映射)
-      ├─► mapping/market_db.save() ───► market_mappings (盘口映射)
-      ├─► mapping/unified_db.save_unified() ──► unified_snapshots (统一快照)
-      └─► database/db: snapshots (采集快照)
+本地 API (HTTP / IPC)
       │
       ▼
-export/json_export.py / csv_export.py ──► 导出文件 (JSON/CSV)
-      │
-      ▼
-client/android / client/windows ──► 读取导出文件或直接查询数据库
+Android 客户端 / Windows 客户端 ────► 通过 API 读取数据，展示与配置
 ```
 
 ---
 
-## 5. 接口预留（后续阶段接入点）
+## 6. 接口预留（后续阶段接入点）
 
 | 预留点 | 位置 | 用途 | V0.3 是否实现 |
 |---|---|---|---|
@@ -156,15 +200,6 @@ client/android / client/windows ──► 读取导出文件或直接查询数�
 | 决策执行 | `decisions/engine.py` | 从策略生成决策 | 否 |
 | 重放接口 | `replay/engine.py` | 历史数据回放 | 否 |
 | P2P 同步 | `p2p/node.py` | 多节点数据同步 | 否 |
-
----
-
-## 6. 客户端解耦方案
-
-- **核心库**：以 Python 库形式提供，所有业务逻辑位于 `core/`, `mapping/`, `sources/`, `database/`, `export/`。
-- **Android 客户端**：通过本地 SQLite 数据库文件或导出的 JSON/CSV 读取数据，不嵌入 Python 采集逻辑。UI 层独立，仅负责展示与配置。
-- **Windows 客户端**：同上，通过读取共享数据目录 (`~/bb_node/data/` 或配置指定路径) 获取数据。
-- **数据路径**：客户端与核心库共享同一数据目录，路径由 `config/config.json` 统一配置，升级时不覆盖用户数据。
 
 ---
 

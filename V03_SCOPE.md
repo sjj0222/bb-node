@@ -1,7 +1,7 @@
-# V0.3 范围定义报告
+# V0.3 范围定义报告（修订版）
 
-> 基线：phase1 (`d39c7aa`)，唯一推荐基线。  
-> 仅用于读取与分析，未执行任何写入。
+> 基线：phase1 @ d39c7aa。  
+> 本文件仅用于读取与分析，保存在 AndroidHarness 独立工作区 `v03_planning/`，**不修改 bb-node 仓库**。
 
 ---
 
@@ -10,12 +10,14 @@
 | 序号 | 功能 | 说明 | 依赖模块 | 进入 V0.3 |
 |---|---|---|---|---|
 | 1 | 自动采集 | 定时/手动从 BB Adapter 采集比赛与盘口数据 | core/collector, sources/bb, mapping/, database/ | 是 |
-| 2 | RAW 原始数据完整保存 | 原始响应按内容哈希命名，分层保存，不覆盖 | sources/bb.save_raw, data/raw/, database/raw_records | 是 |
+| 2 | RAW 原始数据完整保存 | 原始响应按内容哈希命名，分层保存，不覆盖，异常 RAW 不静默丢弃 | sources/bb.save_raw, data/raw/, database/raw_records | 是 |
 | 3 | 正式数据库落库 | SQLite，匹配/盘口/快照/统一/映射/批次表 | database/db.py, mapping/db.py, mapping/market_db.py, mapping/unified_db.py | 是 |
 | 4 | 采集批次与历史追溯 | collection_runs 记录每次采集，支持按批次查询历史 | database/db.py collection_runs | 是 |
 | 5 | JSON/CSV 导出 | 导出比赛、盘口、快照、映射数据 | pipeline / export 模块（需从 phase1/v0.2 提取） | 是 |
 | 6 | Android APK | 核心业务逻辑与客户端解耦，可安装运行 | 新增（不在任何候选分支中） | 是 |
 | 7 | Windows EXE | 同上 | 新增（不在任何候选分支中） | 是 |
+
+**重要说明**：创建客户端目录（`client/android/`、`client/windows/`）**不等于** APK/EXE 已经可交付。客户端构建、签名、打包属于后续独立工作，V0.3 阶段仅负责架构规划与接口预留。
 
 ---
 
@@ -52,11 +54,11 @@ main.py / pipeline.orchestrator
 
 | 模块 | 用途 | 依赖 | 进入 V0.3 | 备注 |
 |---|---|---|---|---|
-| `core/collector.py` | 采集编排，调用适配器与映射 | database, sources, mapping | 是 | 需修复 CONFLICT 漏拦截 |
-| `sources/bb.py` | BB Adapter，RAW 保存与标准化 | core.base.NormalizedRecord | 是 | 需保留 save_raw 扩展（当前未提交修改） |
+| `core/collector.py` | 采集编排，调用适配器与映射 | database, sources, mapping | 是 | 需修复 CONFLICT 处理，不得用 IntegrityError 代替业务状态判断 |
+| `sources/bb.py` | BB Adapter，RAW 保存与标准化 | core.base.NormalizedRecord | 是 | 需保留 save_raw 扩展（经审计后合并） |
 | `sources/base.py` | NormalizedRecord 定义 | 无 | 是 | 纯数据类，无风险 |
 | `sources/registry.py` | 源注册表 | 无 | 是 | 轻量 |
-| `database/db.py` | SQLite 连接、Schema 初始化、核心表 | 无 | 是 | 需确认 DB 路径统一 |
+| `database/db.py` | SQLite 连接、Schema 初始化、核心表 | 无 | 是 | 需确认 DB 路径统一，添加 schema 版本字段 |
 | `mapping/db.py` | 比赛映射表 match_mappings | database.db | 是 | save_mapping 需修复 NULL CID 覆盖 |
 | `mapping/match.py` | canonical_match_id 生成与匹配评分 | 无 | 是 | CID 字段需扩展（业务确认后） |
 | `mapping/market.py` | 盘口归一化 | 无 | 是 | 与比赛映射分离 |
@@ -82,19 +84,34 @@ main.py / pipeline.orchestrator
 | `monitor/monitor.py` | 监控（当前 0 字节） | V0.4+ |
 | `p2p/node.py` | P2P 节点（当前 0 字节） | V0.4+ |
 | `pipeline/orchestrator.py` | 虽在 phase1 中，但 V0.3 可简化为核心采集链路 | V0.3 简化版 |
+| `client/android/` | Android 客户端目录（架构规划，非可交付 APK） | V0.3 架构，APK 后续交付 |
+| `client/windows/` | Windows 客户端目录（架构规划，非可交付 EXE） | V0.3 架构，EXE 后续交付 |
 
 ---
 
-## 4. 业务定义待确认事项（不得简单丢弃异常 RAW）
+## 4. B1-B6 业务定义待确认事项与统一阻塞规则
 
-| 序号 | 问题 | 现状 | 处理方式 | 是否阻塞 V0.3 |
-|---|---|---|---|---|
-| B1 | `event_time=None` 的业务处理 | 所有候选均未最终确定 | 标记为待业务确认，RAW 数据完整保存，不静默丢弃 | 是（映射层） |
-| B2 | `source_market_id` 来自 BB Adapter `mk.id`，一个市场组可存在多个盘口实例 | Market Selector 不区分 source_market_id | 标记为待业务确认，不合并也不隔离，保留原始数据 | 是（映射层） |
-| B3 | CID 生成字段不完整，同名球队同一分钟时间桶碰撞风险 | make_canonical_id 仅 home|away|event_time//60000 | 标记为待业务确认，RAW 数据完整保存，Unified 写入前需人工或规则确认 | 是（映射层） |
-| B4 | Unified 允许 NULL CID | unified_snapshots.canonical_match_id 允许 NULL | 业务确认后决定是否加 NOT NULL 约束 | 是（数据库） |
-| B5 | save_mapping() 可能将已有 CID 更新为 NULL | ON CONFLICT DO UPDATE 无条件覆盖 | 修复为仅在新 CID 不为 NULL 时更新，或保留旧值 | 是（数据库写入安全） |
-| B6 | Collector 漏拦截 CONFLICT | 采集写入无唯一约束保护 | 在收集写入层增加 IntegrityError 捕获 | 是（采集链路） |
+### 4.1 统一阻塞规则（适用于所有 B1-B6）
+
+| 规则 | 说明 |
+|---|---|
+| R1 | 原始采集和 RAW 保存可以继续，不因业务未确认而停止采集或删除 RAW 数据。 |
+| R2 | 未确认身份的数据不得被当作已确认比赛写入 Unified。 |
+| R3 | 未确认盘口语义的数据不得被错误合并，不同 source_market_id 的盘口实例不得自动合并或隔离，保留原始数据。 |
+| R4 | Unified 写入必须有明确的允许条件、隔离条件和状态记录，不允许未经确认的数据进入 Unified。 |
+| R5 | 异常记录不得被静默丢弃，必须有状态标记（如 pending_review / unmatched）。 |
+| R6 | 业务定义事项（B1-B6）必须在 V0.3 验收前明确标记状态，不得自行决策。 |
+
+### 4.2 B1-B6 具体事项
+
+| 序号 | 事项 | 现状 | 阻塞规则 | V0.3 处理方式 | 是否阻塞 V0.3 |
+|---|---|---|---|---|---|
+| B1 | `event_time=None` 的业务处理 | 所有候选均未最终确定 | R1, R2, R5 | 标记为待业务确认，RAW 数据完整保存，不静默丢弃，Unified 写入前需确认 | 是（映射层） |
+| B2 | `source_market_id` 来自 BB Adapter `mk.id`，一个市场组可存在多个盘口实例 | Market Selector 不区分 source_market_id | R1, R3, R5 | 标记为待业务确认，不合并也不隔离，保留原始数据 | 是（映射层） |
+| B3 | CID 生成字段不完整，同名球队同一分钟时间桶碰撞风险 | make_canonical_id 仅 home\|away\|event_time//60000 | R1, R2, R5 | 标记为待业务确认，RAW 数据完整保存，Unified 写入前需人工或规则确认 | 是（映射层） |
+| B4 | Unified 允许 NULL CID | unified_snapshots.canonical_match_id 允许 NULL | R2, R4 | 业务确认后决定是否加 NOT NULL 约束 | 是（数据库） |
+| B5 | `save_mapping()` 可能将已有 CID 更新为 NULL | ON CONFLICT DO UPDATE 无条件覆盖 | R4 | 修复为仅在新 CID 不为 NULL 时更新，或保留旧值 | 是（数据库写入安全） |
+| B6 | Collector 漏拦截 CONFLICT | 采集写入无唯一约束保护 | R1, R4 | 在收集写入层区分 CONFLICT（业务状态）与 IntegrityError（数据库约束），分别处理 | 是（采集链路） |
 
 ---
 
@@ -115,7 +132,7 @@ main.py / pipeline.orchestrator
 - `tests/test_replay_pairing.py`
 - 其他异常命名的未跟踪文件
 
-处理方式：在阶段 0 将上述文件拷贝至只读备份目录，阶段 7 验收后由用户决定是否合并、归档或删除。
+处理方式：在阶段 0 将上述文件拷贝至只读备份目录，阶段 7 验收后由用户决定是否合并、归档或删除。**不得在阶段 0 之前擅自冻结工作区或执行备份。**
 
 ---
 
