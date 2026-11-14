@@ -1,4 +1,4 @@
-# V0.3 数据库与 RAW 数据迁移方案（第三轮修订版）
+# V0.3 数据库与 RAW 数据迁移方案（第四轮修订版）
 
 > 基线：phase1 @ d39c7aa。  
 > **本方案仅用于读取与分析，禁止在本轮执行任何数据库写入或迁移操作。**  
@@ -80,18 +80,45 @@ find . -maxdepth 6 -type f \( -name "*.json" -o -name "*.ladder" -o -name "*.raw
 
 ---
 
-## 3. Schema 版本盘点与迁移前提
+## 3. Schema 版本权威来源（R3 明确）
 
-| 数据库类别 | Schema 版本（配置声明） | Schema 版本（实际） | 版本管理方式 |
-|---|---|---|---|
-| 生产数据库 | schema_version 11（config 声明） | **待阶段 0 只读确认** | 当前为 CREATE TABLE IF NOT EXISTS 隐式管理 |
-| 审计附件数据库 | schema_version 11（config 声明） | **待阶段 0 只读确认** | config.json + 创建脚本 |
-| 测试数据库 | 未知 | **待阶段 0 只读确认** | 未知 |
+### 3.1 唯一权威记录位置
 
-**V0.3 要求**：
-- 在 `database/migrations/` 中建立显式版本管理。
-- 每个数据库在迁移前必须确认当前实际 Schema 版本和结构。
-- `config/config.json` 中的 `schema_version: 11` 仅作为配置参考，不作为实际 Schema 的判定依据。
+**数据库 Schema 版本的唯一权威记录位于数据库本身**，具体为：
+
+| 位置 | 说明 |
+|---|---|
+| **主数据库**：`PRAGMA user_version` 或专用元数据表 `schema_migrations(version, applied_at, description)` | 迁移执行成功后在同一事务中写入，作为数据库实际版本的单一真实来源 |
+| **config.json** 中的 `schema_version` | **仅为配置声明**，表示代码期望的目标版本，**不能替代**数据库实际版本 |
+
+**当前代码证据不足以确认项目已实现上述版本机制**。V0.3 阶段必须将其作为**待实现的设计要求**，不得声称已有机制。
+
+### 3.2 迁移执行与版本记录的事务关系
+
+迁移脚本执行必须满足：
+
+1. **同一事务内**完成 DDL 变更与版本记录更新：
+   ```sql
+   BEGIN TRANSACTION;
+   -- DDL 变更语句...
+   INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, datetime('now'), ?);
+   -- 或 PRAGMA user_version = ?;
+   COMMIT;
+   ```
+2. **失败自动回滚**：任一 DDL 失败，整个事务回滚，版本号不发生变更。
+3. **幂等性**：迁移脚本开头检查当前版本，已应用则跳过。
+
+### 3.3 迁移中断/失败时的实际版本识别
+
+- **中断/失败时**：版本记录未更新，数据库仍处于迁移前版本。通过读取 `schema_migrations` 表最大版本或 `PRAGMA user_version` 即可识别实际版本。
+- **部分表已变更但事务未提交**：SQLite 事务原子性保证不出现部分提交；重启后数据库自动回滚到迁移前状态。
+
+### 3.4 版本记录的迁移前检查与迁移后验收用途
+
+| 阶段 | 用途 |
+|---|---|
+| 迁移前检查 | 读取 `schema_migrations` 最大版本或 `user_version`，与迁移脚本目标版本对比，决定是否执行 |
+| 迁移后验收 | 确认 `schema_migrations` 新增记录，版本号与目标一致；结构校验通过 |
 
 ---
 
@@ -132,7 +159,7 @@ unified_snapshots
 | 4 | 编写 002_add_raw_ledger.sql | 添加 raw_records / raw_observations / unmapped_records |
 | 5 | 编写 003_add_mapping_indexes.sql | 添加缺失索引，确保唯一键兼容 |
 | 6 | 在数据库副本上执行迁移 | **禁止在生产 DB 直接执行** |
-| 7 | 数量、结构、数据核验 | 见 §8 |
+| 7 | 数量、结构、数据核验 | 见 §7, §8 |
 | 8 | 生产迁移必须单独获得用户批准后执行 | 阶段 4 |
 | 9 | 迁移失败时回滚 | 见 V03_ROLLBACK_PLAN.md |
 
@@ -265,7 +292,7 @@ SQLite 在 WAL 模式下，数据可能分布在主数据库文件和 WAL 文件
 1. **全量备份**：迁移前备份所有 `.db` 文件、RAW 目录、配置文件（使用 WAL 一致性备份方式）
 2. **副本测试**：先在数据库副本上执行迁移脚本，验证无误
 3. **事务封装**：每个迁移脚本在单个事务中执行，失败自动回滚
-4. **版本标记**：迁移完成后写入 schema_version，下次迁移前检查当前版本
+4. **版本标记**：迁移完成后写入 `schema_migrations` 或 `user_version`，下次迁移前检查当前版本
 5. **生产迁移必须单独获得用户批准**
 
 ### 10.2 回滚步骤（不得默认 rm -rf，不得直接覆盖原始数据库）
@@ -273,10 +300,19 @@ SQLite 在 WAL 模式下，数据可能分布在主数据库文件和 WAL 文件
 ```
 1. 停止所有采集与写入程序
 2. 将迁移后的数据库文件重命名为失败副本（不删除）
+   mv <db_path> <db_path>.migration_failed_<timestamp>
 3. 从备份恢复数据库文件到新路径（不直接覆盖原文件）
-4. 验证恢复完整性（行数、结构、备份文件完整性 SHA256）
+   使用 SQLite online backup API 或经停写+检查点的备份文件
+   恢复到 <db_path>.restored_<timestamp>
+4. 验证恢复完整性
+   - 备份文件完整性 SHA256 与备份时记录一致（仅验证备份未损坏）
+   - 所有表行数与备份前一致
+   - 表结构与备份前一致
+   - RAW 文件 SHA256 与备份前一致
 5. 如验证通过，将恢复文件替换为生产路径（经用户确认后）
+   mv <db_path>.restored_<timestamp> <db_path>
 6. 从备份恢复 RAW 目录到新路径（不删除原目录）
+   cp -r ./backup/<timestamp>/data/raw/ ./data/raw.restored_<timestamp>
 7. 验证 RAW 文件 SHA256 与备份前一致
 8. 重新启动采集程序，确认可正常读写
 ```
@@ -327,3 +363,4 @@ SQLite 在 WAL 模式下，数据可能分布在主数据库文件和 WAL 文件
 - 禁止在未定义稳定排序方式时直接使用 `ORDER BY rowid`
 - 禁止在有活跃写入进程时进行文件级数据库复制
 - 禁止声称未实现的哈希方案已经实现
+- 禁止声称 Schema 版本机制已实现（当前为待实现设计要求）

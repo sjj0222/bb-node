@@ -1,4 +1,4 @@
-# V0.3 目标架构报告（第三轮修订版）
+# V0.3 目标架构报告（第四轮修订版）
 
 > 基线：phase1 @ d39c7aa。  
 > 本文件仅用于读取与分析，保存在 AndroidHarness 独立工作区 `v03_planning/`，**不修改 bb-node 仓库**。
@@ -104,7 +104,7 @@ bb-node/
 | `pipeline/` | 简化版采集管道 | core, sources, mapping, export | 是 | |
 | `client/android/` | Android 客户端架构目录 | 核心服务 API | 是（架构仅） | **仅预留目录，不等于 APK 可交付** |
 | `client/windows/` | Windows 客户端架构目录 | 核心服务 API | 是（架构仅） | **仅预留目录，不等于 EXE 可交付** |
-| `scripts/` | 备份与恢复 | database, data | 是 | |
+| `scripts/` | 备份与恢复 | database, data | 是 | 方案与规范（V0.3 不要求工具可执行，见 §8） |
 | `tests/` | 单元测试与集成测试 | 所有核心模块 | 是 | |
 | `events/` ~ `p2p/` | 分析/同步模块 | — | 否 | 后续阶段（V0.4+），仅预留接口 |
 
@@ -163,7 +163,7 @@ bb-node/
 
 ---
 
-## 5. 数据流向（V0.3）
+## 5. 数据流向（V0.3）——含 Unified 准入闸门
 
 ```
 BB Adapter API
@@ -172,11 +172,25 @@ BB Adapter API
 核心采集服务（独立后台进程/服务器，唯一写入方）
   sources/bb.BBAdapter.save_raw() ─────────► data/raw/bb/<sha256>.json  (RAW 原始，不覆盖)
   sources/bb.BBAdapter.normalize() ───────► NormalizedRecord (标准化记录)
+      │
+      ▼
   core/collector.collect() ───────────────► database/db: collection_runs (批次记录)
-  ├─► mapping/db.save_mapping() ───► match_mappings (比赛映射)
-  ├─► mapping/market_db.save() ───► market_mappings (盘口映射)
-  ├─► mapping/unified_db.save_unified() ──► unified_snapshots (统一快照)
-  └─► database/db: snapshots (采集快照)
+      │
+      ├─► mapping/db.save_mapping() ───► match_mappings (比赛映射)
+      ├─► mapping/market_db.save() ───► market_mappings (盘口映射)
+      │        │
+      │        ▼
+      │  ┌─────────────────────────────────────┐
+      │  │  身份与盘口语义准入检查               │
+      │  │  - B1: event_time 确认               │
+      │  │  - B2: source_market_id 语义确认      │
+      │  │  - B3: CID 字段完整/碰撞风险          │
+      │  │  - B4: Unified NULL CID 策略          │
+      │  │  - B5/B6: 写入链路安全修复验收         │
+      │  └─────────────────────────────────────┘
+      │        │
+      ▼        ▼
+  mapping/unified_db.save_unified() ──► unified_snapshots (统一快照)
       │
       ▼
   export/json_export.py / csv_export.py ──► 导出文件 (JSON/CSV)
@@ -187,6 +201,13 @@ BB Adapter API
       ▼
 Android 客户端 / Windows 客户端 ────► 通过 API 读取数据，展示与配置
 ```
+
+**准入规则（必须在代码与架构中体现）：**
+
+- **B1-B4 未确认的数据不得被当作已确认数据写入 Unified**。
+- **未确认的数据进入 "pending_review" 或相应隔离状态**。
+- **只有满足准入条件的数据才允许进入 Unified**。
+- **B5/B6 未修复并完成验收前，相关 Unified 写入链路不得启用**。
 
 ---
 
@@ -209,3 +230,15 @@ Android 客户端 / Windows 客户端 ────► 通过 API 读取数据，
 - 未单独建立 `models/`、`services/`、`adapters/` 目录，现有模块职责已足够清晰。
 - `client/android` 与 `client/windows` 仅为 V0.3 目录框架（架构预留），具体实现由客户端团队按需填充，核心库不依赖客户端。
 - V0.3 不交付可安装的 APK 或 EXE，客户端实际构建属于后续独立工作。
+
+---
+
+## 8. 备份与恢复交付范围（R4 统一）
+
+| 项目 | V0.3 交付定义 |
+|---|---|
+| **备份与恢复方案** | ✅ 必须交付：完整的操作规范、流程文档、备份目录结构、校验清单、回滚步骤、WAL 一致性备份方式 |
+| **备份恢复工具（scripts/backup.py, scripts/restore.py）** | ❌ **不要求实际可执行工具**，仅交付接口定义、参数规范、调用契约与方案文档 |
+| **验收标准** | 方案文档完整、流程清晰、可由人工执行并验证；不要求自动化脚本通过验收 |
+
+> **统一说明**：V03_SCOPE.md、V03_TARGET_ARCHITECTURE.md、V03_ACCEPTANCE.md 均采用上述定义。范围要求方案与规范，架构定义接口契约，验收条件为方案文档完整性与可人工执行性，不要求工具代码已实现并通过测试。

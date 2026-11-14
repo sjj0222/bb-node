@@ -1,7 +1,7 @@
-# V0.3 最终建议报告（第三轮修订版）
+# V0.3 最终建议报告（第四轮修订版）
 
 > 基线：phase1 @ d39c7aa。  
-> 本报告汇总前七份第三轮修订报告，作为 ChatGPT 复核的最终依据。  
+> 本报告汇总前七份第四轮修订报告，作为 ChatGPT 复核的最终依据。  
 > 保存在 AndroidHarness 独立工作区 `v03_planning/`，**不修改 bb-node 仓库**。
 
 ---
@@ -106,7 +106,7 @@
 | 项目 | 结论 |
 |---|---|
 | 三类数据库 | 生产数据库 / 审计附件数据库 / 测试数据库，**不得默认认定审计附件数据库为生产主数据库** |
-| Schema 版本 | `config/config.json` 中 `schema_version: 11` **仅为配置声明**，不能证明所有数据库实际 Schema 均为 11；各数据库实际结构需在阶段 0 只读确认 |
+| Schema 版本 | `config/config.json` 中 `schema_version: 11` **仅为配置声明**，不能证明所有数据库实际 Schema 均为 11；各数据库实际结构需在阶段 0 只读确认。**Schema 版本唯一权威记录位于数据库本身（PRAGMA user_version 或 schema_migrations 表），config.json 仅为配置声明** |
 | 迁移脚本 | 必须具备结构检测和兼容性判断，不能只依赖 `CREATE TABLE IF NOT EXISTS` |
 | WAL 备份 | 必须使用 SQLite online backup API 或明确停写 + WAL 检查点流程 |
 | 数据库文件 SHA256 | **仅用于备份文件完整性验证**，不作为迁移前后数据库相同的判断标准 |
@@ -120,7 +120,8 @@
 - 不得默认执行 `rm -rf`、`reset main`
 - 不得直接覆盖原始数据库，不得删除 RAW 或未提交工作区文件
 - 优先采用新目录、数据库副本、独立迁移目标、验证后切换路径、原始资产只读保留
-- Git 历史通过可恢复的提交对象和 Tag 保存，不得只复制代码文件就认为历史已归档
+- Git 历史通过可恢复的提交对象和 Tag 保存，不得只复制代码文件就认为历史已经归档
+- 回滚分为两阶段：阶段一回滚执行（仅读操作与文件恢复），阶段二回滚后验证（需单独人工授权，不默认作为回滚一部分）
 
 ---
 
@@ -129,7 +130,7 @@
 | 阶段 | 名称 | 用户批准 |
 |---|---|---|
 | 阶段 0 | 只读资产盘点与备份可行性评估 | **是**（未批准前不执行冻结/备份/数据库操作） |
-| 阶段 1 | 唯一基线确定 | 是 |
+| 阶段 1 | 唯一基线确定（phase1） | 是 |
 | 阶段 2 | 必要修复筛选 | 是 |
 | 阶段 3 | 基础采集链路整理 | 是 |
 | 阶段 4 | 数据库与 RAW 数据迁移 | 是（生产迁移单独批准） |
@@ -142,48 +143,26 @@
 
 ---
 
-## 9. 当前 aaa 分支混合提交范围风险
+## 9. 当前 GitHub 分支状态（第四轮修订）
 
-当前 `aaa` 分支相对 `main`（merge-base: `74cff439`）包含以下提交：
-
-| 提交 | 内容 | 类别 |
+| 项目 | 状态 | 说明 |
 |---|---|---|
-| `dd6bf33` ~ `b1581d7` | night-run 审计文档、`events/line.py` 修改、`tests/test_line_bb_d1.py` 新增 | 代码/审计（非本文档范围） |
-| `d02fab7` | feat: add V0.3 consolidation reports (8 files) | 规划文档 |
-| `c472220` | revise: update V0.3 reports per ChatGPT audit | 规划文档 |
+| 比较基准 | `main...aaa` | - |
+| `main` HEAD | `74cff43929f997f9f72fdbae8649b39221b8b4b8` | 未修改 |
+| `aaa` HEAD | `93a2b5a` (短 SHA) | - |
+| `aaa` ahead | 10 commits | 相对于 `main` |
+| `aaa` behind | 0 | 相对于 `main` |
+| 文件变化 | 19 个文件 | 8 份规划报告 + 2 份新增文档 + 审计文档 + 代码修改 |
+| 规划报告 | 8 份 V03_*.md | 已修订至第四轮 |
+| 新增文档 | V03_ROUND3_CHANGELOG.md, V03_ROUND3_REVIEW_REPORT.md | 第三轮产出 |
+| 审计文档 | 7 份 docs/audit/night-run/* | 来自第三轮提交 |
+| 代码修改 | events/line.py, tests/test_line_bb_d1.py | 来自第三轮提交 |
 
-`aaa` 分支相对 `main` 的文件变更包含：
-- 8 份 `V03_*.md` 规划报告（仓库根目录）
-- 7 份 `docs/audit/night-run/*` 审计文件
-- `events/line.py` 代码修改
-- `tests/test_line_bb_d1.py` 新增测试
-
-**风险**：`aaa` 分支混合了规划文档、审计文档和代码修改，不适合作为纯文档 PR 的来源。若直接基于 `aaa` 创建 PR 合并到 `main`，将同时引入代码变更和审计文件，超出本次规划文档修订的范围。
-
-**本次任务不执行任何 Git 操作，不创建/修改/删除分支，不创建 PR。**
-
----
-
-## 10. 后续建议的文档 PR 文件范围
-
-建议后续单独创建文档 PR 时，仅包含以下文件：
-
-| 文件 | 说明 |
-|---|---|
-| `V03_BASELINE_COMPARISON.md` | 候选基线比较 |
-| `V03_SCOPE.md` | 范围定义 |
-| `V03_TARGET_ARCHITECTURE.md` | 目标架构 |
-| `V03_DATA_MIGRATION_PLAN.md` | 数据迁移方案 |
-| `V03_CONSOLIDATION_STEPS.md` | 实施阶段 |
-| `V03_ACCEPTANCE.md` | 验收标准 |
-| `V03_ROLLBACK_PLAN.md` | 回滚计划 |
-| `V03_FINAL_RECOMMENDATION.md` | 最终建议 |
-
-**不应包含**：`docs/audit/night-run/*`、`events/line.py`、`tests/test_line_bb_d1.py`、`v03_planning/*`（工作区副本）及任何代码文件。具体分支整理方式需用户单独批准，本报告不擅自执行。
+**说明**：此前报告中出现的 "9 commits / 17 files" 已过时，不得继续沿用。当前 `aaa` 分支已包含上述全部变更。**不能表述成整个 GitHub 仓库完全没有变化**，也不得将分支文件变更误写为生产环境已经部署。
 
 ---
 
-## 11. 尚未解决的业务定义和技术决策
+## 10. 尚未解决的业务定义和技术决策
 
 | 类别 | 项目 | 状态 |
 |---|---|---|
@@ -200,20 +179,22 @@
 
 ---
 
-## 12. 输出文件清单
+## 11. 输出文件清单
 
 | 文件 | 内容 | 路径 |
 |---|---|---|
-| V03_BASELINE_COMPARISON.md | 候选基线比较（第三轮修订） | v03_planning/V03_BASELINE_COMPARISON.md |
-| V03_SCOPE.md | 范围定义（第三轮修订） | v03_planning/V03_SCOPE.md |
-| V03_TARGET_ARCHITECTURE.md | 目标架构（第三轮修订） | v03_planning/V03_TARGET_ARCHITECTURE.md |
-| V03_DATA_MIGRATION_PLAN.md | 数据迁移方案（第三轮修订） | v03_planning/V03_DATA_MIGRATION_PLAN.md |
+| V03_BASELINE_COMPARISON.md | 候选基线比较（第四轮修订） | v03_planning/V03_BASELINE_COMPARISON.md |
+| V03_SCOPE.md | 范围定义（第四轮修订） | v03_planning/V03_SCOPE.md |
+| V03_TARGET_ARCHITECTURE.md | 目标架构（第四轮修订） | v03_planning/V03_TARGET_ARCHITECTURE.md |
+| V03_DATA_MIGRATION_PLAN.md | 数据迁移方案（第四轮修订） | v03_planning/V03_DATA_MIGRATION_PLAN.md |
 | V03_CONSOLIDATION_STEPS.md | 实施阶段（第三轮修订） | v03_planning/V03_CONSOLIDATION_STEPS.md |
-| V03_ACCEPTANCE.md | 验收标准（第三轮修订） | v03_planning/V03_ACCEPTANCE.md |
-| V03_ROLLBACK_PLAN.md | 回滚计划（第三轮修订） | v03_planning/V03_ROLLBACK_PLAN.md |
-| V03_FINAL_RECOMMENDATION.md | 最终建议（第三轮修订） | v03_planning/V03_FINAL_RECOMMENDATION.md |
+| V03_ACCEPTANCE.md | 验收标准（第四轮修订） | v03_planning/V03_ACCEPTANCE.md |
+| V03_ROLLBACK_PLAN.md | 回滚计划（第四轮修订） | v03_planning/V03_ROLLBACK_PLAN.md |
+| V03_FINAL_RECOMMENDATION.md | 最终建议（第四轮修订） | v03_planning/V03_FINAL_RECOMMENDATION.md |
 | V03_ROUND3_CHANGELOG.md | 第三轮变更日志 | v03_planning/V03_ROUND3_CHANGELOG.md |
 | V03_ROUND3_REVIEW_REPORT.md | 第三轮复核报告 | v03_planning/V03_ROUND3_REVIEW_REPORT.md |
+| V03_ROUND4_CHANGELOG.md | 第四轮变更日志 | v03_planning/V03_ROUND4_CHANGELOG.md |
+| V03_ROUND4_SELF_CHECK.md | 第四轮自检报告 | v03_planning/V03_ROUND4_SELF_CHECK.md |
 
 全部文件位于 AndroidHarness 独立工作区 `v03_planning/`，**未写入 bb-node 仓库**。
 
