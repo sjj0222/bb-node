@@ -13,7 +13,7 @@
 |---|---|
 | 是否完成五项遗留问题修订 | **是**。R1（B2 数据隔离表述统一）、R3（Schema 版本唯一权威来源统一）、R5（回滚授权边界修复）、R6（第四轮提交文件数量修正）、R7（最终建议文档版本和 Git 状态更新）均已完成修订。 |
 | 是否通过交叉一致性检查 | **是**。R1 在 V03_FINAL_RECOMMENDATION.md §4.2 与 V03_SCOPE.md §4.4、V03_TARGET_ARCHITECTURE.md §5 保持一致；R3 在 V03_FINAL_RECOMMENDATION.md §6 与 V03_DATA_MIGRATION_PLAN.md §3 保持一致；R5 在 V03_ROLLBACK_PLAN.md §5.2 与 V03_DATA_MIGRATION_PLAN.md §10.2 保持一致；R6 在 V03_BASELINE_COMPARISON.md §7 与 V03_FINAL_RECOMMENDATION.md §9 保持一致；R7 在 V03_FINAL_RECOMMENDATION.md 标题/§9/§11 统一更新。 |
-| 是否仍存在阻塞问题 | **是（已明确记录，未擅自解决）**。包括：B1-B4 待业务确认；B5/B6 代码安全问题待修复并验收；Schema 版本机制待实现代码证据；Git 状态数据为第五轮快照而非第六轮实时查询；review/v03-round5 分支未推送到远程。详见 V03_ROUND6_CHANGELOG.md §4。 |
+| 是否仍存在阻塞问题 | **是（已明确记录，未擅自解决）**。包括：B1-B4 待业务确认；B5/B6 代码安全问题待修复并验收；Schema 版本机制待实现代码证据；Git 状态数据为第五轮快照而非第六轮实时查询；review/v03-round5 分支远程状态已存在（HEAD 373d477...）。详见 V03_ROUND6_CHANGELOG.md §4。 |
 | 是否建议进入阶段 0 | **否**。第六轮仅完成文档定点修订，未获得阶段 0 执行授权，更未获得冻结工作区、复制备份、数据库操作、代码修改、分支整合或 PR 合并授权。 |
 | 是否有任何 BB-node 主仓库文件被修改 | **否**。所有修改仅发生在 AndroidHarness 独立工作区 `v03_planning/` 内的 Markdown 报告。 |
 | 是否有任何数据库或 RAW 文件被修改 | **否**。未修改、未复制、未迁移任何数据库或 RAW 文件。 |
@@ -62,7 +62,7 @@
 | 技术实现 | Schema 版本机制（PRAGMA user_version） | 待实现代码证据 | 当前代码库中无实现证据，标记为待实现设计要求 |
 | 技术实现 | 规范化数据核验哈希方案 | 待实现 | 设计要求已定义，尚未实现可执行代码 |
 | Git | aaa 分支混合提交整理方式 | 待用户决定 | 记录在 V03_FINAL_RECOMMENDATION.md §9、V03_ROUND6_CHANGELOG.md §4 |
-| Git | review/v03-round5 远程状态 | 未知 | 分支仅在本地创建并提交，未推送到远程，远程状态未知 |
+| Git | review/v03-round5 远程状态 | 已存在 | 第五轮远程分支 "review/v03-round5" 已存在，HEAD 为 373d477674225a79391e9892ae40f8d3089f3909。第六轮以第五轮提交为父提交。 |
 | 证据缺口 | Git 状态数据时间 | 第五轮快照 | §9 所有 Git 状态数据来自第五轮复核读取的远程状态快照，第六轮未执行新的只读查询 |
 | 证据缺口 | 第四轮提交实际文件数 | 第五轮记录 | GitHub API 实际读取 11 个文件，与 commit message 声明 12 files 不一致；第六轮未重新验证 |
 
