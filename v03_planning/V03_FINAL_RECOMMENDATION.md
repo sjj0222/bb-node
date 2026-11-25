@@ -1,7 +1,7 @@
-# V0.3 最终建议报告（第四轮修订版）
+# V0.3 最终建议报告（第六轮修订版）
 
 > 基线：phase1 @ d39c7aa。  
-> 本报告汇总前七份第四轮修订报告，作为 ChatGPT 复核的最终依据。  
+> 本报告汇总前七份第四轮修订报告及第五轮、第六轮定点修订结果，作为 ChatGPT 复核的最终依据。  
 > 保存在 AndroidHarness 独立工作区 `v03_planning/`，**不修改 bb-node 仓库**。
 
 ---
@@ -78,7 +78,7 @@
 | 序号 | 事项 | 类型 | 处理方式 | 准入影响 |
 |---|---|---|---|---|
 | B1 | `event_time=None` 的业务处理 | 待业务定义 | 标记待确认，RAW 完整保存 | 不阻塞采集/RAW；阻塞未确认身份数据写入 Unified |
-| B2 | `source_market_id` 合并或隔离语义 | 待业务定义 | 标记待确认，不合并不隔离，保留原始数据 | 不阻塞采集/RAW；阻塞未确认盘口语义的错误合并 |
+| B2 | `source_market_id` 合并或隔离语义 | 待业务定义 | 未确认盘口映射必须进行状态隔离，"pending_review" 数据不得进入正式 "unified_snapshots"，不得参与正式 Unified 查询、统计、特征计算和分析，业务确认并通过准入检查后才能进入正式 Unified | 不阻塞采集/RAW；阻塞未确认盘口语义的数据写入 Unified |
 | B3 | CID 生成字段不完整，碰撞风险 | 待业务定义 | 标记待确认，RAW 完整保存 | 不阻塞采集/RAW；阻塞未确认身份数据写入 Unified |
 | B4 | Unified 允许 NULL CID | 待业务定义 | 标记待确认，需明确隔离条件和状态记录 | 不阻塞采集/RAW；阻塞 NULL CID 作为已确认比赛进入 Unified |
 | B5 | `save_mapping()` 可能将已有 CID 更新为 NULL | 代码安全问题 | **必须在启用映射写入链路前修复并验收** | 未修复则阻塞映射写入链路启用 |
@@ -106,7 +106,7 @@
 | 项目 | 结论 |
 |---|---|
 | 三类数据库 | 生产数据库 / 审计附件数据库 / 测试数据库，**不得默认认定审计附件数据库为生产主数据库** |
-| Schema 版本 | `config/config.json` 中 `schema_version: 11` **仅为配置声明**，不能证明所有数据库实际 Schema 均为 11；各数据库实际结构需在阶段 0 只读确认。**Schema 版本唯一权威记录位于数据库本身（PRAGMA user_version 或 schema_migrations 表），config.json 仅为配置声明** |
+| Schema 版本 | `config/config.json` 中 `schema_version: 11` **仅为配置声明**，不能证明所有数据库实际 Schema 均为 11；各数据库实际结构需在阶段 0 只读确认。**SQLite "PRAGMA user_version" 是 Schema 版本唯一权威来源。"config.json" 仅用于声明目标版本，不是实际 Schema 版本权威。"schema_migrations" 如存在，只能作为辅助审计记录，不得成为第二个权威来源。Schema 结构变更与 "user_version" 更新必须处于同一事务。迁移失败必须回滚结构变更和版本更新。当前尚无代码实现证据，继续标记为待实现设计要求。** |
 | 迁移脚本 | 必须具备结构检测和兼容性判断，不能只依赖 `CREATE TABLE IF NOT EXISTS` |
 | WAL 备份 | 必须使用 SQLite online backup API 或明确停写 + WAL 检查点流程 |
 | 数据库文件 SHA256 | **仅用于备份文件完整性验证**，不作为迁移前后数据库相同的判断标准 |
@@ -143,12 +143,16 @@
 
 ---
 
-## 9. 当前 GitHub 分支状态（第五轮修订，基于最新只读查询）
+## 9. 当前 GitHub 分支状态（第六轮修订，基于第五轮只读查询快照）
 
+> **所有 Git 状态数据均来自第五轮复核时读取的远程状态快照，不得声称是第六轮实时查询结果。**
+>
 > **必须区分三种口径，不得混为一谈**：
-> 1. **第四轮提交本身修改的文件**：12 个（据提交信息 "docs: V0.3 fourth-round revisions (12 files)"）
-> 2. **`aaa` 分支相对 `main` 的累计提交数量**：11 commits
-> 3. **`aaa` 分支相对 `main` 的累计文件变化数量**：21 个文件
+> 1. **第四轮提交 commit message 声明数量**：12（据提交信息 "docs: V0.3 fourth-round revisions (12 files)"）
+> 2. **GitHub API 实际文件清单数量**：11（第五轮独立复核读取到的实际文件数，作为统计依据）
+> 3. **`aaa` 分支相对 `main` 的累计提交数量**：11 commits
+> 4. **`aaa` 分支相对 `main` 的累计文件变化数量**：21 个文件
+> 5. **第五轮提交文件数**：10 个（全部位于 `v03_planning/`）
 
 | 项目 | 状态 | 说明 |
 |---|---|---|
@@ -156,7 +160,9 @@
 | `main` HEAD | `74cff43929f997f9f72fdbae8649b39221b8b4b8` | **未因第四轮提交而修改** |
 | `aaa` HEAD | `055490a564a84b8f1d01e1c8d8133692fe1dd5cd` | **第四轮提交已进入 `aaa`** |
 | `aaa` 父提交 | `93a2b5ac2e413faee45df69e02397fd4318c5716` | 第四轮提交的父提交 |
-| 第四轮提交信息 | `docs: V0.3 fourth-round revisions (12 files)` | - |
+| 第四轮提交信息 | `docs: V0.3 fourth-round revisions (12 files)` | commit message 声明 12 files，实际清单为 11 个 |
+| 第四轮提交实际文件数 | 11 个 | GitHub API 读取到的实际文件清单，作为统计依据 |
+| `review/v03-round5` HEAD | `373d477674225a79391e9892ae40f8d3089f3909` | 第五轮提交，仅含 `v03_planning/` 文档文件 |
 | `aaa` ahead | 11 commits | 相对于 `main` 的累计提交数 |
 | `aaa` behind | 0 | 相对于 `main` |
 | 累计文件变化 | 21 个文件 | 相对于 `main` 的累计文件变化（含规划文档、审计文档、代码修改） |
@@ -168,7 +174,7 @@
 - **`aaa` 分支累计存在规划文档、审计文档及代码相关变化**；不得声称整个 `aaa` 分支只有规划文件。
 - **不得声称生产环境已经部署**；本项目尚未进入生产部署阶段。
 - 此前报告中出现的 "9 commits / 17 files"、"10 commits / 19 files"、"aaa HEAD 93a2b5a" 均已过时，不得继续沿用。
-- 如当前远程状态与上述数据不同，以只读查询得到的最新结果为准，并记录查询时间（本表数据基于最近一次独立核查）。
+- 如当前远程状态与上述数据不同，以只读查询得到的最新结果为准，并记录查询时间（本表数据基于最近一次独立核查，即第五轮复核）。
 
 ---
 
@@ -193,21 +199,25 @@
 
 | 文件 | 内容 | 路径 |
 |---|---|---|
-| V03_BASELINE_COMPARISON.md | 候选基线比较（第四轮修订） | v03_planning/V03_BASELINE_COMPARISON.md |
-| V03_SCOPE.md | 范围定义（第四轮修订） | v03_planning/V03_SCOPE.md |
-| V03_TARGET_ARCHITECTURE.md | 目标架构（第四轮修订） | v03_planning/V03_TARGET_ARCHITECTURE.md |
-| V03_DATA_MIGRATION_PLAN.md | 数据迁移方案（第四轮修订） | v03_planning/V03_DATA_MIGRATION_PLAN.md |
+| V03_BASELINE_COMPARISON.md | 候选基线比较（第六轮修订 R6） | v03_planning/V03_BASELINE_COMPARISON.md |
+| V03_SCOPE.md | 范围定义（第五轮修订 R1） | v03_planning/V03_SCOPE.md |
+| V03_TARGET_ARCHITECTURE.md | 目标架构（第五轮修订 R1） | v03_planning/V03_TARGET_ARCHITECTURE.md |
+| V03_DATA_MIGRATION_PLAN.md | 数据迁移方案（第五轮修订 R3/R5） | v03_planning/V03_DATA_MIGRATION_PLAN.md |
 | V03_CONSOLIDATION_STEPS.md | 实施阶段（第三轮修订） | v03_planning/V03_CONSOLIDATION_STEPS.md |
 | V03_ACCEPTANCE.md | 验收标准（第四轮修订） | v03_planning/V03_ACCEPTANCE.md |
-| V03_ROLLBACK_PLAN.md | 回滚计划（第四轮修订） | v03_planning/V03_ROLLBACK_PLAN.md |
-| V03_FINAL_RECOMMENDATION.md | 最终建议（第四轮修订） | v03_planning/V03_FINAL_RECOMMENDATION.md |
+| V03_ROLLBACK_PLAN.md | 回滚计划（第六轮修订 R5） | v03_planning/V03_ROLLBACK_PLAN.md |
+| V03_FINAL_RECOMMENDATION.md | 最终建议（第六轮修订 R1/R3/R7） | v03_planning/V03_FINAL_RECOMMENDATION.md |
 | V03_ROUND3_CHANGELOG.md | 第三轮变更日志 | v03_planning/V03_ROUND3_CHANGELOG.md |
 | V03_ROUND3_REVIEW_REPORT.md | 第三轮复核报告 | v03_planning/V03_ROUND3_REVIEW_REPORT.md |
 | V03_ROUND4_CHANGELOG.md | 第四轮变更日志 | v03_planning/V03_ROUND4_CHANGELOG.md |
 | V03_ROUND4_SELF_CHECK.md | 第四轮自检报告 | v03_planning/V03_ROUND4_SELF_CHECK.md |
+| V03_ROUND5_CHANGELOG.md | 第五轮变更日志 | v03_planning/V03_ROUND5_CHANGELOG.md |
+| V03_ROUND5_SELF_CHECK.md | 第五轮自检报告 | v03_planning/V03_ROUND5_SELF_CHECK.md |
+| V03_ROUND6_CHANGELOG.md | 第六轮变更日志 | v03_planning/V03_ROUND6_CHANGELOG.md |
+| V03_ROUND6_SELF_CHECK.md | 第六轮自检报告 | v03_planning/V03_ROUND6_SELF_CHECK.md |
 
 全部文件位于 AndroidHarness 独立工作区 `v03_planning/`，**未写入 bb-node 仓库**。
 
 ---
 
-**下一步**：等待 ChatGPT 复核。审核通过后，方可进入阶段 0（且需用户单独批准后才执行任何只读盘点动作；冻结/备份/数据库操作需另行单独批准）。
+**下一步**：等待 ChatGPT 独立复核第六轮修订结果。审核通过后，方可进入阶段 0（且需用户单独批准后才执行任何只读盘点动作；冻结/备份/数据库操作需另行单独批准）。本轮未执行任何 Git 写操作，未创建 PR，未合并分支。
